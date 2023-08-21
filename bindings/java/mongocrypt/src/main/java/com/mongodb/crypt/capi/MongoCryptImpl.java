@@ -114,6 +114,12 @@ class MongoCryptImpl implements MongoCrypt {
             throw new MongoCryptException("Unable to create new mongocrypt object");
         }
 
+        Env.init();
+        if (Env.VERBOSE) {
+            Env.print();
+            System.out.println("mongodb-crypt: prototype version: 3");
+        }
+
         logCallback = new LogCallback();
 
         configure(() -> mongocrypt_setopt_log_handler(wrapped, logCallback, null));
