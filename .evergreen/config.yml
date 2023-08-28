@@ -946,6 +946,15 @@ tasks:
       vars:
         args: +check-format
 
+- name: benchmark-java
+  commands:
+    - command: "subprocess.exec"
+      params:
+        binary: bash
+        working_dir: "./libmongocrypt"
+        args:
+          - "./.evergreen/benchmark-java.sh"
+
 pre:
   # Update the evergreen expansion to dynamically set the ${libmongocrypt_s3_suffix} and ${libmongocrypt_s3_suffix_copy} expansions.
   - command: "shell.exec"
@@ -1436,3 +1445,9 @@ buildvariants:
     vs_target_arch: x86
   tasks:
   - build-and-test-and-upload
+
+- name: benchmark
+  display_name: "Benchmark"
+  run_on: rhel90-dbx-perf-large
+  tasks:
+  - benchmark-java
