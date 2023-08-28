@@ -958,6 +958,19 @@ tasks:
         args:
           - "./.evergreen/benchmark-java.sh"
 
+- name: benchmark-java-USE_BINARY_DEFINITION
+  commands:
+    - func: "fetch source"
+    - command: "subprocess.exec"
+      params:
+        env:
+          USE_BINARY_DEFINITION: ON
+          VERBOSE: ON
+        binary: bash
+        working_dir: "./libmongocrypt"
+        args:
+          - "./.evergreen/benchmark-java.sh"
+
 pre:
   # Update the evergreen expansion to dynamically set the ${libmongocrypt_s3_suffix} and ${libmongocrypt_s3_suffix_copy} expansions.
   - command: "shell.exec"
@@ -1454,4 +1467,5 @@ buildvariants:
   run_on: rhel90-dbx-perf-large
   tasks:
   - benchmark-java
+  - benchmark-java-USE_BINARY_DEFINITION
 
