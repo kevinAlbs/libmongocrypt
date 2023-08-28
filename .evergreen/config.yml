@@ -948,6 +948,7 @@ tasks:
 
 - name: benchmark-java
   commands:
+    - func: "fetch source"
     - command: "subprocess.exec"
       params:
         binary: bash
