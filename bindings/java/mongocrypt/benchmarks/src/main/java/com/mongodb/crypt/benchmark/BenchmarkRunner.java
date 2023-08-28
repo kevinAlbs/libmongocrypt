@@ -141,29 +141,29 @@ public class BenchmarkRunner {
             // Decrypt `notEncrypted` to measure baseline. No decryption is expected.
             {
                 double medianDurationMicroSeconds = measureMedianDurationOfDecrypt(mongoCrypt, notEncrypted);
-                System.out.printf("Baseline median duration (µs) over %4d runs: %f%n", RUNS, medianDurationMicroSeconds);
-                System.out.println("Baseline expected ops/sec: " + (1_000_000 / medianDurationMicroSeconds));
+                System.out.printf("Baseline median duration (µs)  : %.2f%n", medianDurationMicroSeconds);
+                System.out.printf("Baseline expected ops/sec      : %.2f%n", 1_000_000 / medianDurationMicroSeconds);
             }
 
             // Decrypt `notEncrypted` and measure ops/sec. No decryption is expected.
             {
                 long medianOpsPerSec = measureMedianOpsPerSecOfDecrypt(mongoCrypt, notEncrypted);
-                System.out.printf("Baseline median ops/sec over %2d seconds: %d%n", NUM_SECS, medianOpsPerSec);
+                System.out.printf("Baseline median ops/sec        : %d%n", medianOpsPerSec);
             }
 
 
             // Decrypt `encrypted`.
             {
                 double medianDurationMicroSeconds = measureMedianDurationOfDecrypt(mongoCrypt, encrypted);
-                System.out.printf("Decrypting median duration (µs) over %4d runs: %f%n", RUNS, medianDurationMicroSeconds);
-                System.out.println("Decrypting expected ops/sec: " + (1_000_000 / medianDurationMicroSeconds));
+                System.out.printf("Decrypting median duration (µs): %.2f%n", medianDurationMicroSeconds);
+                System.out.printf("Decrypting expected ops/sec:   : %.2f%n", 1_000_000 / medianDurationMicroSeconds);
             }
 
 
             // Decrypt `encrypted` and measure ops/sec.
             {
                 long medianOpsPerSec = measureMedianOpsPerSecOfDecrypt(mongoCrypt, encrypted);
-                System.out.printf("Decrypting median ops/sec over %2d seconds: %d%n", NUM_SECS, medianOpsPerSec);
+                System.out.printf("Decrypting median ops/sec      : %d%n", medianOpsPerSec);
             }
         }
     }
