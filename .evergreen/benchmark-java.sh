@@ -18,6 +18,7 @@ run_cmake \
 run_cmake --build "$build_dir" --target install
 
 # Run Java benchmarks.
+export JAVA_HOME=/opt/java/jdk8
 # Include path to installed libmongocrypt.so
 export LD_LIBRARY_PATH="$MONGOCRYPT_INSTALL_PREFIX/lib64"
 cd bindings/java/mongocrypt
