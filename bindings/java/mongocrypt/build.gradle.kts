@@ -82,6 +82,8 @@ val gitDescribe by lazy {
 val isJavaTag by lazy { gitDescribe.startsWith("java") }
 val gitVersion by lazy { gitDescribe.subSequence(gitDescribe.toCharArray().indexOfFirst { it.isDigit() }, gitDescribe.length).toString() }
 
+println ("build.gradle.kts: isJavaTag=${isJavaTag}. gitVersion=${gitVersion}");
+
 val defaultDownloadRevision: String by lazy {
     val gitCommandLine = if (gitVersion == version) {
         listOf("git", "rev-list", "-n", "1", gitVersion)
