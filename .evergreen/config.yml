@@ -4,6 +4,8 @@
 # Some environment variables are hidden in the evergreen project config.
 # View this in Evergreen => Projects => libmongocrypt.
 #
+# Set ten minute timeout.
+exec_timeout_secs: 600
 functions:
   "cleanup environment":
     - command: shell.exec
