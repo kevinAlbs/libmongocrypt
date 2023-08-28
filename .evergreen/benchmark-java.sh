@@ -23,4 +23,4 @@ export JAVA_HOME=/opt/java/jdk8
 export LD_LIBRARY_PATH="$MONGOCRYPT_INSTALL_PREFIX/lib64"
 cd bindings/java/mongocrypt
 ./gradlew --version
-./gradlew clean benchmarks:run
+./gradlew clean benchmarks:run --info
