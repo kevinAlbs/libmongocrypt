@@ -154,7 +154,7 @@ public class BenchmarkRunner {
             // Decrypt `notEncrypted` to measure baseline. No decryption is expected.
             {
                 double medianDurationMicroSeconds = measureMedianDurationOfDecrypt(mongoCrypt, notEncrypted);
-                System.out.printf("Baseline median duration (µs)  : %.2f%n", medianDurationMicroSeconds);
+                System.out.printf("Baseline median duration       : %.2f microseconds%n", medianDurationMicroSeconds);
                 System.out.printf("Baseline expected ops/sec      : %.2f%n", 1_000_000 / medianDurationMicroSeconds);
             }
 
@@ -168,7 +168,7 @@ public class BenchmarkRunner {
             // Decrypt `encrypted`.
             {
                 double medianDurationMicroSeconds = measureMedianDurationOfDecrypt(mongoCrypt, encrypted);
-                System.out.printf("Decrypting median duration (µs): %.2f%n", medianDurationMicroSeconds);
+                System.out.printf("Decrypting median duration     : %.2f microseconds%n", medianDurationMicroSeconds);
                 System.out.printf("Decrypting expected ops/sec:   : %.2f%n", 1_000_000 / medianDurationMicroSeconds);
             }
 
