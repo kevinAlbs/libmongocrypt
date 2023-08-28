@@ -59,10 +59,6 @@ public class BenchmarkRunner {
     private static MongoCrypt createMongoCrypt() {
         return MongoCrypts.create(MongoCryptOptions
                 .builder()
-                .awsKmsProviderOptions(MongoAwsKmsProviderOptions.builder()
-                        .accessKeyId("example")
-                        .secretAccessKey("example")
-                        .build())
                 .localKmsProviderOptions(MongoLocalKmsProviderOptions.builder()
                         .localMasterKey(ByteBuffer.wrap(LOCAL_MASTER_KEY))
                         .build())
