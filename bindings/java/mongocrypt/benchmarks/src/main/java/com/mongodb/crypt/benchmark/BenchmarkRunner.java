@@ -2,7 +2,13 @@ package com.mongodb.crypt.benchmark;
 import com.mongodb.crypt.capi.*;
 import org.bson.*;
 
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.InputStreamReader;
+import java.net.URL;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Collections;
@@ -20,33 +26,35 @@ public class BenchmarkRunner {
             -27, -81
     };
 
-    // `keyDocumentString` represents a Data Encryption Key (DEK) encrypted with the Key Encryption Key (KEK) `LOCAL_MASTER_KEY`.
-    static final String keyDocumentString = """
-            {
-              "_id": {
-                "$binary": {
-                  "base64": "YWFhYWFhYWFhYWFhYWFhYQ==",
-                  "subType": "04"
-                }
-              },
-              "keyMaterial": {
-                "$binary": {
-                  "base64": "ACR7Hm33dDOAAD7l2ubZhSpSUWK8BkALUY+qW3UgBAEcTV8sBwZnaAWnzDsmrX55dgmYHWfynDlJogC/e33u6pbhyXvFTs5ow9OLCuCWBJ39T/Ivm3kMaZJybkejY0V+uc4UEdHvVVz/SbitVnzs2WXdMGmo1/HmDRrxGYZjewFslquv8wtUHF5pyB+QDlQBd/al9M444/8bJZFbMSmtIg==",
-                  "subType": "00"
-                }
-              },
-              "creationDate": {
-                "$date": "2023-08-21T14:28:20.875Z"
-              },
-              "updateDate": {
-                "$date": "2023-08-21T14:28:20.875Z"
-              },
-              "status": 0,
-              "masterKey": {
-                "provider": "local"
-              }
+    private static String getFileAsString(final String fileName, String lineSeparator)  {
+        try {
+            URL resource = BenchmarkRunner.class.getResource("/" + fileName);
+            if (resource == null) {
+                throw new RuntimeException("Could not find file " + fileName);
             }
-     """;
+            File file = new File(resource.toURI());
+            StringBuilder stringBuilder = new StringBuilder();
+            String line;
+            try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(Files.newInputStream(file.toPath()), StandardCharsets.UTF_8))) {
+                boolean first = true;
+                while ((line = reader.readLine()) != null) {
+                    if (!first) {
+                        stringBuilder.append(lineSeparator);
+                    }
+                    first = false;
+                    stringBuilder.append(line);
+                }
+            }
+            return stringBuilder.toString();
+        } catch (Throwable t) {
+            throw new RuntimeException("Could not parse file " + fileName, t);
+        }
+    }
+
+    private static BsonDocument getResourceAsDocument(final String fileName)  {
+        return BsonDocument.parse(getFileAsString(fileName, System.getProperty("line.separator")));
+    }
 
     private static MongoCrypt createMongoCrypt() {
         return MongoCrypts.create(MongoCryptOptions
@@ -111,7 +119,8 @@ public class BenchmarkRunner {
             NUM_SECS=3;
         }
         System.out.printf ("BenchmarkRunner is using libmongocrypt version=%s, RUNS=%d, NUM_SECS=%d%n", CAPI.mongocrypt_version(null).toString(), RUNS, NUM_SECS);
-        BsonDocument keyDocument = BsonDocument.parse (keyDocumentString);
+        // `keyDocument` is a Data Encryption Key (DEK) encrypted with the Key Encryption Key (KEK) `LOCAL_MASTER_KEY`.
+        BsonDocument keyDocument = getResourceAsDocument("keyDocument.json");
         try (MongoCrypt mongoCrypt = createMongoCrypt()) {
             // `encrypted` will contain encrypted fields.
             BsonDocument encrypted = new BsonDocument();
