@@ -1454,6 +1454,4 @@ buildvariants:
   run_on: rhel90-dbx-perf-large
   tasks:
   - benchmark-java
-  - name: benchmark-java
-    run_on: ubuntu1804-test
 
