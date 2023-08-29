@@ -957,6 +957,11 @@ tasks:
         working_dir: "./libmongocrypt"
         args:
           - "./.evergreen/benchmark-java.sh"
+    - command: "shell.exec"
+      params:
+        binary: bash
+        script: |-
+          find . -iname "results.json"
     - command: "perf.send"
       params:
         file: libmongocrypt/bindings/java/mongocrypt/results.json
