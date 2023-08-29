@@ -964,7 +964,7 @@ tasks:
           find . -iname "results.json"
     - command: "perf.send"
       params:
-        file: libmongocrypt/bindings/java/mongocrypt/results.json
+        file: libmongocrypt/bindings/java/mongocrypt/benchmarks/results.json
 
 - name: benchmark-java-USE_BINARY_DEFINITION
   commands:
