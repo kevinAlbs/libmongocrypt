@@ -2,16 +2,12 @@ package com.mongodb.crypt.benchmark;
 import com.mongodb.crypt.capi.*;
 import org.bson.*;
 
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.InputStreamReader;
+import java.io.*;
 import java.net.URL;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.util.ArrayList;
-import java.util.Base64;
-import java.util.Collections;
+import java.util.*;
 
 public class BenchmarkRunner {
     static final int NUM_FIELDS = 1500;
@@ -141,14 +137,40 @@ public class BenchmarkRunner {
                     }
                 }
             }
-
-
             
+            BsonDateTime created_at = new BsonDateTime(new Date().getTime());
             // Decrypt `encrypted` and measure ops/sec.
-            {
-                long medianOpsPerSec = measureMedianOpsPerSecOfDecrypt(mongoCrypt, encrypted);
-                System.out.printf("Decrypting median ops/sec      : %d%n", medianOpsPerSec);
+            long medianOpsPerSec = measureMedianOpsPerSecOfDecrypt(mongoCrypt, encrypted);
+            System.out.printf("Decrypting 1500 fields median ops/sec : %d%n", medianOpsPerSec);
+            BsonDateTime completed_at = new BsonDateTime(new Date().getTime());
+
+            // Print the results in JSON that can be accepted by the `perf.send` command.
+            // See https://docs.devprod.prod.corp.mongodb.com/evergreen/Project-Configuration/Project-Commands#perfsend for the expected `perf.send` input.
+            BsonDocument results = new BsonDocument().append("results", new BsonArray(
+                    Arrays.asList(
+                        new BsonDocument()
+                                .append("info", new BsonDocument().append("test_name", new BsonString("java_decrypt_1500")))
+                                .append("created_at", created_at)
+                                .append("completed_at", completed_at)
+                                .append("artifacts", new BsonArray())
+                                .append("metrics", new BsonArray(Arrays.asList(
+                                        new BsonDocument()
+                                                .append("name", new BsonString("medianOpsPerSec"))
+                                                .append("type", new BsonString("THROUGHPUT"))
+                                                .append("value", new BsonInt64(medianOpsPerSec))
+                                )))
+                                .append("sub_tests", new BsonArray())
+                    )
+            ));
+            String resultsString = results.toJson();
+            // Remove the prefix and suffix when writing to a file so only the [ ... ] array is included.
+            resultsString = resultsString.substring("{\"results\": ".length(), resultsString.length() - 1);
+
+            final String resultsFilePath = "results.json";
+            try (OutputStreamWriter fileWriter = new OutputStreamWriter(new FileOutputStream(resultsFilePath), StandardCharsets.UTF_8)) {
+                fileWriter.write(resultsString);
             }
+            System.out.println ("Results written to file: " + resultsFilePath);
         }
     }
 }
