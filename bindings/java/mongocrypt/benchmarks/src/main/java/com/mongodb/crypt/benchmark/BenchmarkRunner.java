@@ -7,6 +7,9 @@ import java.net.URL;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 
 public class BenchmarkRunner {
@@ -137,12 +140,12 @@ public class BenchmarkRunner {
                     }
                 }
             }
-            
-            BsonDateTime created_at = new BsonDateTime(new Date().getTime());
+
+            String created_at = ZonedDateTime.now( ZoneOffset.UTC ).format( DateTimeFormatter.ISO_INSTANT );
             // Decrypt `encrypted` and measure ops/sec.
             long medianOpsPerSec = measureMedianOpsPerSecOfDecrypt(mongoCrypt, encrypted);
             System.out.printf("Decrypting 1500 fields median ops/sec : %d%n", medianOpsPerSec);
-            BsonDateTime completed_at = new BsonDateTime(new Date().getTime());
+            String completed_at = ZonedDateTime.now( ZoneOffset.UTC ).format( DateTimeFormatter.ISO_INSTANT );
 
             // Print the results in JSON that can be accepted by the `perf.send` command.
             // See https://docs.devprod.prod.corp.mongodb.com/evergreen/Project-Configuration/Project-Commands#perfsend for the expected `perf.send` input.
@@ -150,8 +153,8 @@ public class BenchmarkRunner {
                     Arrays.asList(
                         new BsonDocument()
                                 .append("info", new BsonDocument().append("test_name", new BsonString("java_decrypt_1500")))
-                                .append("created_at", created_at)
-                                .append("completed_at", completed_at)
+                                .append("created_at", new BsonString(created_at))
+                                .append("completed_at", new BsonString(completed_at))
                                 .append("artifacts", new BsonArray())
                                 .append("metrics", new BsonArray(Arrays.asList(
                                         new BsonDocument()
