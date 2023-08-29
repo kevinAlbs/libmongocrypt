@@ -105,7 +105,7 @@ public class BenchmarkRunner {
         return opsPerSecs.get(NUM_SECS / 2);
     }
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws IOException {
         if (System.getenv("QUICK") != null && System.getenv("QUICK").equals("ON")) {
             System.out.printf("QUICK=ON is set. Using NUM_SECS=3%n");
             NUM_SECS=3;
