@@ -1464,6 +1464,7 @@ buildvariants:
 
 - name: benchmark
   display_name: "Benchmark"
+  # rhel90-dbx-perf-large is the dedicated performance distro referenced in DRIVERS-2666.
   run_on: rhel90-dbx-perf-large
   tasks:
   - benchmark-java
