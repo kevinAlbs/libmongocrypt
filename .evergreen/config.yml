@@ -959,7 +959,7 @@ tasks:
           - "./.evergreen/benchmark-java.sh"
     - command: "perf.send"
       params:
-        file: libmongocrypt/results.json
+        file: libmongocrypt/bindings/java/mongocrypt/results.json
 
 - name: benchmark-java-USE_BINARY_DEFINITION
   commands:
