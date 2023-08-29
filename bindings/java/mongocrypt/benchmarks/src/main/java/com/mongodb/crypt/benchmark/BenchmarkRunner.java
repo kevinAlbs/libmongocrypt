@@ -120,8 +120,6 @@ public class BenchmarkRunner {
         try (MongoCrypt mongoCrypt = createMongoCrypt()) {
             // `encrypted` will contain encrypted fields.
             BsonDocument encrypted = new BsonDocument();
-            // `notEncrypted` is a copy of `encrypted` with the binary subtypes changed to prevent decryption. It is used as a baseline.
-            BsonDocument notEncrypted = new BsonDocument();
             {
                 for (int i = 0; i < NUM_FIELDS; i++) {
                     MongoExplicitEncryptOptions options = MongoExplicitEncryptOptions.builder()
@@ -138,37 +136,14 @@ public class BenchmarkRunner {
                         assert ctx.getState() == MongoCryptContext.State.READY;
                         RawBsonDocument result = ctx.finish();
                         BsonValue encryptedValue = result.get("v");
-                        // Create a copy of the binary data with the non-encrypted subtype.
-                        BsonBinary notEncryptedValue = new BsonBinary(BsonBinarySubType.BINARY, encryptedValue.asBinary().getData());
                         String key = String.format("key%04d", i);
                         encrypted.append(key, encryptedValue);
-                        notEncrypted.append(key, notEncryptedValue);
                     }
                 }
             }
 
-            // Decrypt `notEncrypted` to measure baseline. No decryption is expected.
-            {
-                double medianDurationMicroSeconds = measureMedianDurationOfDecrypt(mongoCrypt, notEncrypted);
-                System.out.printf("Baseline median duration       : %.2f microseconds%n", medianDurationMicroSeconds);
-                System.out.printf("Baseline expected ops/sec      : %.2f%n", 1_000_000 / medianDurationMicroSeconds);
-            }
 
-            // Decrypt `notEncrypted` and measure ops/sec. No decryption is expected.
-            {
-                long medianOpsPerSec = measureMedianOpsPerSecOfDecrypt(mongoCrypt, notEncrypted);
-                System.out.printf("Baseline median ops/sec        : %d%n", medianOpsPerSec);
-            }
-
-
-            // Decrypt `encrypted`.
-            {
-                double medianDurationMicroSeconds = measureMedianDurationOfDecrypt(mongoCrypt, encrypted);
-                System.out.printf("Decrypting median duration     : %.2f microseconds%n", medianDurationMicroSeconds);
-                System.out.printf("Decrypting expected ops/sec:   : %.2f%n", 1_000_000 / medianDurationMicroSeconds);
-            }
-
-
+            
             // Decrypt `encrypted` and measure ops/sec.
             {
                 long medianOpsPerSec = measureMedianOpsPerSecOfDecrypt(mongoCrypt, encrypted);
