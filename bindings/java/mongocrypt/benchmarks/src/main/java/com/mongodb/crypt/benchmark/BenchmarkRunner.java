@@ -14,7 +14,7 @@ import java.util.*;
 
 public class BenchmarkRunner {
     static final int NUM_FIELDS = 1500;
-    static final int RUNS = 128;
+    static int NUM_WARMUP_SECS = 2;
     static int NUM_SECS = 10;
     static final byte[] LOCAL_MASTER_KEY = new byte[]{
             -99, -108, 75, 13, -109, -48, -59, 68, -91, 114, -3, 50, 27, -108, 48, -112, 35, 53,
@@ -64,30 +64,9 @@ public class BenchmarkRunner {
                 .build());
     }
 
-    private static double measureMedianDurationOfDecrypt (MongoCrypt mongoCrypt, BsonDocument toDecrypt) {
-        ArrayList<Long> durations = new ArrayList<Long>(RUNS);
-        // Attempt to measure median operation time.
-        for (int i = 0; i < RUNS; i++) {
-            long start = System.nanoTime();
-            try (MongoCryptContext ctx = mongoCrypt.createDecryptionContext(toDecrypt)) {
-                assert ctx.getState() == MongoCryptContext.State.READY;
-                RawBsonDocument result = ctx.finish();
-                int gotSize = result.size();
-                if (gotSize != NUM_FIELDS) {
-                    throw new RuntimeException("Expected size: " + NUM_FIELDS + ", got " + gotSize);
-                }
-            }
-            durations.add(System.nanoTime() - start);
-        }
-
-        Collections.sort(durations);
-        long medianDuration = durations.get(RUNS / 2);
-        return medianDuration / 1_000.0;
-    }
-
     private static long measureMedianOpsPerSecOfDecrypt (MongoCrypt mongoCrypt, BsonDocument toDecrypt) {
         ArrayList<Long> opsPerSecs = new ArrayList<Long>(NUM_SECS);
-        for (int i = 0; i < NUM_SECS; i++) {
+        for (int i = 0; i < NUM_WARMUP_SECS + NUM_SECS; i++) {
             long opsPerSec = 0;
             long start = System.nanoTime();
             // Run for one second.
@@ -102,7 +81,9 @@ public class BenchmarkRunner {
                     opsPerSec++;
                 }
             }
-            opsPerSecs.add(opsPerSec);
+            if (i > NUM_WARMUP_SECS) {
+                opsPerSecs.add(opsPerSec);
+            }
         }
         Collections.sort(opsPerSecs);
         return opsPerSecs.get(NUM_SECS / 2);
@@ -113,7 +94,7 @@ public class BenchmarkRunner {
             System.out.printf("QUICK=ON is set. Using NUM_SECS=3%n");
             NUM_SECS=3;
         }
-        System.out.printf ("BenchmarkRunner is using libmongocrypt version=%s, RUNS=%d, NUM_SECS=%d%n", CAPI.mongocrypt_version(null).toString(), RUNS, NUM_SECS);
+        System.out.printf ("BenchmarkRunner is using libmongocrypt version=%s, NUM_WARMUP_SECS=%d, NUM_SECS=%d%n", CAPI.mongocrypt_version(null).toString(), NUM_WARMUP_SECS, NUM_SECS);
         // `keyDocument` is a Data Encryption Key (DEK) encrypted with the Key Encryption Key (KEK) `LOCAL_MASTER_KEY`.
         BsonDocument keyDocument = getResourceAsDocument("keyDocument.json");
         try (MongoCrypt mongoCrypt = createMongoCrypt()) {
