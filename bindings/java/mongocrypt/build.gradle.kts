@@ -71,29 +71,31 @@ dependencies {
 
 // Returns a String representing the output of `git describe`
 val gitDescribe by lazy {
-    val describeStdOut = ByteArrayOutputStream()
-    exec {
-        commandLine = listOf("git", "describe", "--tags", "--always", "--dirty")
-        standardOutput = describeStdOut
-    }
-    describeStdOut.toString().trim()
+    "node-v6.0.0-1-gce14f0c"
+//    val describeStdOut = ByteArrayOutputStream()
+//    exec {
+//        commandLine = listOf("git", "describe", "--tags", "--always", "--dirty")
+//        standardOutput = describeStdOut
+//    }
+//    describeStdOut.toString().trim()
 }
 
 val isJavaTag by lazy { gitDescribe.startsWith("java") }
 val gitVersion by lazy { gitDescribe.subSequence(gitDescribe.toCharArray().indexOfFirst { it.isDigit() }, gitDescribe.length).toString() }
 
 val defaultDownloadRevision: String by lazy {
-    val gitCommandLine = if (gitVersion == version) {
-        listOf("git", "rev-list", "-n", "1", gitVersion)
-    } else {
-        listOf("git", "rev-parse", "HEAD")
-    }
-    val describeStdOut = ByteArrayOutputStream()
-    exec {
-        commandLine = gitCommandLine
-        standardOutput = describeStdOut
-    }
-    describeStdOut.toString().trim()
+    "ce14f0cebfe9d33bf5d2f5467a0fb8a36908e80c"
+//    val gitCommandLine = if (gitVersion == version) {
+//        listOf("git", "rev-list", "-n", "1", gitVersion)
+//    } else {
+//        listOf("git", "rev-parse", "HEAD")
+//    }
+//    val describeStdOut = ByteArrayOutputStream()
+//    exec {
+//        commandLine = gitCommandLine
+//        standardOutput = describeStdOut
+//    }
+//    describeStdOut.toString().trim()
 }
 
 /*
