@@ -42,7 +42,8 @@ static bool _finalize(mongocrypt_ctx_t *ctx, mongocrypt_binary_t *out) {
                 return _mongocrypt_ctx_fail_w_msg(ctx, "failed to encrypt datakey with new provider");
             }
 
-            BSON_ASSERT(bson_init_static(&bson, bin.data, bin.len));
+            BSON_ASSERT(bin.len < SIZE_MAX);
+            BSON_ASSERT(bson_init_static(&bson, bin.data, (size_t)bin.len));
 
             /* Among all (possible) fields in key document, the only fields
              * required by caller to construct the corresponding bulk write

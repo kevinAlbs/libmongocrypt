@@ -76,9 +76,9 @@ public class CAPI {
         // The `mongocrypt_binary_t` struct layout is part of libmongocrypt's ABI:
         // typedef struct _mongocrypt_binary_t {
         //     uint8_t *data;
-        //     uint32_t len;
+        //     uint64_t len;
         // } mongocrypt_binary_t;
-        // To improve performance, fields are read directly using `getPointer` and `getInt`.
+        // To improve performance, fields are read directly using `getPointer` and `getLong`.
         // This results in observed performance improvements over using of `mongocrypt_binary_data` and `mongocrypt_binary_len`. Refer: MONGOCRYPT-589.
         public mongocrypt_binary_t() {
             super();
@@ -86,11 +86,11 @@ public class CAPI {
         public Pointer data() {
             return this.getPointer().getPointer(0);
         }
-        public int len() {
-            int len = this.getPointer().getInt(Native.POINTER_SIZE);
+        public long len() {
+            long len = this.getPointer().getLong(Native.POINTER_SIZE);
             // mongocrypt_binary_t represents length as an unsigned `uint32_t`.
-            // Representing `uint32_t` values greater than INT32_MAX is represented as a negative `int`.
-            // Throw an exception. mongocrypt_binary_t is not expected to use lengths greater than INT32_MAX.
+            // Representing `uint64_t` values greater than INT64_MAX is represented as a negative `long`.
+            // Throw an exception. mongocrypt_binary_t is not expected to use lengths greater than INT64_MAX.
             if (len < 0) {
                 throw new IllegalArgumentException(
                         String.format("Expected mongocrypt_binary_t length to be non-negative, got: %d", len));

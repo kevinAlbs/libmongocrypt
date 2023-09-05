@@ -72,10 +72,13 @@ const char *mongocrypt_version(uint32_t *len);
  *
  * The `mongocrypt_binary_t` struct definition is public.
  * Consumers may rely on the struct layout.
+ *
+ * `len` is expected to have values in the range [0, UINT32_MAX] by `mongocrypt_binary_len`.
+ * `len` is defined as `uint64_t` for possible future extension.
  */
 typedef struct _mongocrypt_binary_t {
     uint8_t *data;
-    uint32_t len;
+    uint64_t len;
 } mongocrypt_binary_t;
 
 /**
@@ -116,6 +119,9 @@ uint8_t *mongocrypt_binary_data(const mongocrypt_binary_t *binary);
  * @param[in] binary The @ref mongocrypt_binary_t.
  *
  * @returns The length of the viewed data.
+ *
+ * @warning Asserts if `binary->len` is greater than UINT32_MAX.
+ *
  */
 MONGOCRYPT_EXPORT
 uint32_t mongocrypt_binary_len(const mongocrypt_binary_t *binary);

@@ -240,7 +240,7 @@ char *_mongocrypt_new_json_string_from_binary(mongocrypt_binary_t *binary) {
         char *hex;
         char *full_str;
 
-        BSON_ASSERT(binary->len <= (uint32_t)INT_MAX);
+        BSON_ASSERT(binary->len <= INT_MAX);
         hex = _mongocrypt_new_string_from_bytes(binary->data, (int)binary->len);
         full_str = bson_strdup_printf("(malformed) %s", hex);
         bson_free(hex);
@@ -338,7 +338,7 @@ bool mongocrypt_setopt_kms_provider_local(mongocrypt_t *crypt, mongocrypt_binary
 
     if (crypt->log.trace_enabled) {
         char *key_val;
-        BSON_ASSERT(key->len <= (uint32_t)INT_MAX);
+        BSON_ASSERT(key->len <= INT_MAX);
         key_val = _mongocrypt_new_string_from_bytes(key->data, (int)key->len);
 
         _mongocrypt_log(&crypt->log, MONGOCRYPT_LOG_LEVEL_TRACE, "%s (%s=\"%s\")", BSON_FUNC, "key", key_val);

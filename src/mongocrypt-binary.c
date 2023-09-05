@@ -44,7 +44,11 @@ bool _mongocrypt_binary_to_bson(mongocrypt_binary_t *binary, bson_t *out) {
     BSON_ASSERT_PARAM(binary);
     BSON_ASSERT_PARAM(out);
 
-    return bson_init_static(out, binary->data, binary->len);
+    if (binary->len > SIZE_MAX) {
+        return false;
+    }
+
+    return bson_init_static(out, binary->data, (size_t)binary->len);
 }
 
 uint8_t *mongocrypt_binary_data(const mongocrypt_binary_t *binary) {
@@ -58,7 +62,10 @@ uint32_t mongocrypt_binary_len(const mongocrypt_binary_t *binary) {
     if (!binary) {
         return 0;
     }
-    return binary->len;
+
+    BSON_ASSERT(binary->len <= UINT32_MAX);
+
+    return (uint32_t)binary->len;
 }
 
 void mongocrypt_binary_destroy(mongocrypt_binary_t *binary) {

@@ -513,7 +513,8 @@ static bool _mongo_feed_collinfo(mongocrypt_ctx_t *ctx, mongocrypt_binary_t *in)
     BSON_ASSERT_PARAM(in);
 
     ectx = (_mongocrypt_ctx_encrypt_t *)ctx;
-    if (!bson_init_static(&as_bson, in->data, in->len)) {
+    BSON_ASSERT(in->len < SIZE_MAX);
+    if (!bson_init_static(&as_bson, in->data, (size_t)in->len)) {
         return _mongocrypt_ctx_fail_w_msg(ctx, "BSON malformed");
     }
 

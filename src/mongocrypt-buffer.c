@@ -183,7 +183,8 @@ void _mongocrypt_buffer_from_binary(_mongocrypt_buffer_t *buf, const mongocrypt_
 
     _mongocrypt_buffer_init(buf);
     buf->data = binary->data;
-    buf->len = binary->len;
+    BSON_ASSERT(binary->len <= UINT32_MAX);
+    buf->len = (uint32_t)binary->len;
     buf->owned = false;
 }
 

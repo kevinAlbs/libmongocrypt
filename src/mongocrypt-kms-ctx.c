@@ -877,7 +877,8 @@ bool mongocrypt_kms_ctx_feed(mongocrypt_kms_ctx_t *kms, mongocrypt_binary_t *byt
                         mongocrypt_binary_data(bytes));
     }
 
-    if (!kms_response_parser_feed(kms->parser, bytes->data, bytes->len)) {
+    BSON_ASSERT(bytes->len <= UINT32_MAX);
+    if (!kms_response_parser_feed(kms->parser, bytes->data, (uint32_t)bytes->len)) {
         if (is_kms(kms->req_type)) {
             /* The KMIP response parser does not suport kms_response_parser_status.
              * Only report the error string. */

@@ -71,7 +71,7 @@ final class CAPIHelper {
 
     static ByteBuffer toByteBuffer(final mongocrypt_binary_t binary) {
         Pointer pointer = binary.data();
-        int length = binary.len();
+        long length = binary.len();
         return pointer.getByteBuffer(0, length);
     }
 
