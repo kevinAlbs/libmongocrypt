@@ -57,6 +57,24 @@ typedef struct {
 } _mongocrypt_opts_kms_provider_kmip_t;
 
 typedef struct {
+    char *name;
+    _mongocrypt_kms_provider_t type;
+
+    union {
+        _mongocrypt_opts_kms_provider_azure_t azure;
+        _mongocrypt_opts_kms_provider_gcp_t gcp;
+        _mongocrypt_opts_kms_provider_aws_t aws;
+        _mongocrypt_opts_kms_provider_local_t local;
+        _mongocrypt_opts_kms_provider_kmip_t kmip;
+    } value;
+} _mongocrypt_named_kms_provider_t;
+
+// `_mongocrypt_named_kms_provider_from_bson` returns NULL on error and sets an error status.
+_mongocrypt_named_kms_provider_t *
+_mongocrypt_named_kms_provider_new(const char *name, const bson_t *def, mongocrypt_status_t *status);
+_mongocrypt_named_kms_provider_t *_mongocrypt_named_kms_provider_copy(const _mongocrypt_named_kms_provider_t *nkp);
+void _mongocrypt_named_kms_provider_destroy(_mongocrypt_named_kms_provider_t *nkp);
+typedef struct {
     int configured_providers; /* A bit set of _mongocrypt_kms_provider_t */
     int need_credentials;     /* A bit set of _mongocrypt_kms_provider_t */
     _mongocrypt_opts_kms_provider_local_t local;

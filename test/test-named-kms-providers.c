@@ -39,6 +39,72 @@ static void test_configuring_named_kms_providers(_mongocrypt_tester_t *tester) {
     }
 }
 
+static void test_mongocrypt_named_kms_provider_parse(_mongocrypt_tester_t *tester) {
+    // Create an unused `mongocrypt_t` to initialize library with `_mongocrypt_do_init`. Otherwise, parsing base64 may
+    // fail.
+    {
+        mongocrypt_t *unused = mongocrypt_new();
+        mongocrypt_destroy(unused);
+    }
+
+    mongocrypt_status_t *status = mongocrypt_status_new();
+
+    // Parse a valid local KMS provider.
+    {
+        _mongocrypt_named_kms_provider_t *nkp =
+            _mongocrypt_named_kms_provider_new("local:name",
+                                               TMP_BSON(BSON_STR({"key" : "%s"}), MYLOCAL_KEK_BASE64),
+                                               status);
+        ASSERT_OK_STATUS(nkp != NULL, status);
+        ASSERT(nkp->type == MONGOCRYPT_KMS_PROVIDER_LOCAL);
+        _mongocrypt_named_kms_provider_destroy(nkp);
+    }
+
+    // Parsing an unrecognized prefix is an error.
+    {
+        _mongocrypt_named_kms_provider_t *nkp =
+            _mongocrypt_named_kms_provider_new("foo:name",
+                                               TMP_BSON(BSON_STR({"key" : "%s"}), MYLOCAL_KEK_BASE64),
+                                               status);
+        ASSERT_FAILS_STATUS(nkp != NULL, status, "unknown prefix");
+    }
+
+    // Parsing an empty name is an error.
+    {
+        _mongocrypt_named_kms_provider_t *nkp =
+            _mongocrypt_named_kms_provider_new("local:",
+                                               TMP_BSON(BSON_STR({"key" : "%s"}), MYLOCAL_KEK_BASE64),
+                                               status);
+        ASSERT_FAILS_STATUS(nkp != NULL, status, "empty name");
+    }
+
+    // Parsing an empty prefix is an error.
+    {
+        _mongocrypt_named_kms_provider_t *nkp =
+            _mongocrypt_named_kms_provider_new(":name", TMP_BSON(BSON_STR({"key" : "%s"}), MYLOCAL_KEK_BASE64), status);
+        ASSERT_FAILS_STATUS(nkp != NULL, status, "empty prefix");
+    }
+
+    // Parsing no prefix is an error.
+    {
+        _mongocrypt_named_kms_provider_t *nkp =
+            _mongocrypt_named_kms_provider_new("local", TMP_BSON(BSON_STR({"key" : "%s"}), MYLOCAL_KEK_BASE64), status);
+        ASSERT_FAILS_STATUS(nkp != NULL, status, "missing colon");
+    }
+
+    // Parsing an extra colon is an error.
+    {
+        _mongocrypt_named_kms_provider_t *nkp =
+            _mongocrypt_named_kms_provider_new("local:name:foo",
+                                               TMP_BSON(BSON_STR({"key" : "%s"}), MYLOCAL_KEK_BASE64),
+                                               status);
+        ASSERT_FAILS_STATUS(nkp != NULL, status, "extra colon");
+    }
+
+    mongocrypt_status_destroy(status);
+}
+
 void _mongocrypt_tester_install_named_kms_providers(_mongocrypt_tester_t *tester) {
     INSTALL_TEST(test_configuring_named_kms_providers);
+    INSTALL_TEST(test_mongocrypt_named_kms_provider_parse);
 }
