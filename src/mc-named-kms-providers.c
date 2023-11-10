@@ -14,13 +14,13 @@
  * limitations under the License.
  */
 
-#include <mc-named-kms-providers.h>
+#include <mongocrypt-opts-private.h> // Declares structs implemented in this file.
+
 #include <mongocrypt-crypto-private.h> // MONGOCRYPT_KEY_LEN
 #include <mongocrypt-private.h>        // CLIENT_ERR
 
 // `_mongocrypt_named_kms_provider_from_bson` returns NULL on error and sets an error status.
-mc_named_kms_provider_t *
-mc_named_kms_provider_new(const char *key, const bson_t *def, mongocrypt_status_t *status) {
+mc_named_kms_provider_t *mc_named_kms_provider_new(const char *key, const bson_t *def, mongocrypt_status_t *status) {
     BSON_ASSERT_PARAM(key);
     BSON_ASSERT_PARAM(def);
     BSON_ASSERT(status || true); // Optional.
@@ -321,8 +321,7 @@ bool mc_named_kms_provider_map_has(mc_named_kms_provider_map_t *nkpm, const char
 }
 
 // `mongocrypt_named_kms_provider_map_get` returns NULL if `key` is not in the map.
-const mc_named_kms_provider_t *
-mc_named_kms_provider_map_get(mc_named_kms_provider_map_t *nkpm, const char *key) {
+const mc_named_kms_provider_t *mc_named_kms_provider_map_get(mc_named_kms_provider_map_t *nkpm, const char *key) {
     BSON_ASSERT_PARAM(nkpm);
     BSON_ASSERT_PARAM(key);
     for (size_t i = 0; i < nkpm->entries.len; i++) {
@@ -335,8 +334,7 @@ mc_named_kms_provider_map_get(mc_named_kms_provider_map_t *nkpm, const char *key
 }
 
 // `mongocrypt_named_kms_provider_map_put` requires the KMS provider name must not be present in the map.
-void mc_named_kms_provider_map_put(mc_named_kms_provider_map_t *nkpm,
-                                            const mc_named_kms_provider_t *new_nkp) {
+void mc_named_kms_provider_map_put(mc_named_kms_provider_map_t *nkpm, const mc_named_kms_provider_t *new_nkp) {
     BSON_ASSERT_PARAM(nkpm);
     BSON_ASSERT_PARAM(new_nkp);
     mc_named_kms_provider_t *to_put = mc_named_kms_provider_copy(new_nkp);

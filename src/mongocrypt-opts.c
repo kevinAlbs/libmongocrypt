@@ -25,6 +25,7 @@
 void _mongocrypt_opts_init(_mongocrypt_opts_t *opts) {
     BSON_ASSERT_PARAM(opts);
     memset(opts, 0, sizeof(*opts));
+    opts->nkpm = mc_named_kms_provider_map_new();
 }
 
 static void _mongocrypt_opts_kms_provider_azure_cleanup(_mongocrypt_opts_kms_provider_azure_t *kms_provider_azure) {
@@ -94,6 +95,7 @@ void _mongocrypt_opts_cleanup(_mongocrypt_opts_t *opts) {
     if (!opts) {
         return;
     }
+    mc_named_kms_provider_map_destroy(opts->nkpm);
     _mongocrypt_opts_kms_providers_cleanup(&opts->kms_providers);
     _mongocrypt_buffer_cleanup(&opts->schema_map);
     _mongocrypt_buffer_cleanup(&opts->encrypted_field_config_map);

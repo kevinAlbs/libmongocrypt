@@ -67,12 +67,41 @@ typedef struct {
 } _mongocrypt_opts_kms_providers_t;
 
 typedef struct {
+    char *key; // `key` stores "<prefix>:<name>". Example: "local:myname".
+    _mongocrypt_kms_provider_t type;
+
+    union {
+        _mongocrypt_opts_kms_provider_azure_t azure;
+        _mongocrypt_opts_kms_provider_gcp_t gcp;
+        _mongocrypt_opts_kms_provider_aws_t aws;
+        _mongocrypt_opts_kms_provider_local_t local;
+        _mongocrypt_opts_kms_provider_kmip_t kmip;
+    } value;
+} mc_named_kms_provider_t;
+
+// `_mongocrypt_named_kms_provider_from_bson` returns NULL on error and sets an error status.
+mc_named_kms_provider_t *mc_named_kms_provider_new(const char *name, const bson_t *def, mongocrypt_status_t *status);
+mc_named_kms_provider_t *mc_named_kms_provider_copy(const mc_named_kms_provider_t *nkp);
+void mc_named_kms_provider_destroy(mc_named_kms_provider_t *nkp);
+
+typedef struct _mc_named_kms_provider_map_t mc_named_kms_provider_map_t;
+
+mc_named_kms_provider_map_t *mc_named_kms_provider_map_new(void);
+void mc_named_kms_provider_map_destroy(mc_named_kms_provider_map_t *nkpm);
+bool mc_named_kms_provider_map_has(mc_named_kms_provider_map_t *nkpm, const char *key);
+// `mongocrypt_named_kms_provider_map_get` returns NULL if `name` is not in the map.
+const mc_named_kms_provider_t *mc_named_kms_provider_map_get(mc_named_kms_provider_map_t *nkpm, const char *key);
+// `mongocrypt_named_kms_provider_map_put` overwrites an entry if `nkp->name` is present in the map.
+void mc_named_kms_provider_map_put(mc_named_kms_provider_map_t *nkpm, const mc_named_kms_provider_t *nkp);
+
+typedef struct {
     mongocrypt_log_fn_t log_fn;
     void *log_ctx;
     _mongocrypt_buffer_t schema_map;
     _mongocrypt_buffer_t encrypted_field_config_map;
 
     _mongocrypt_opts_kms_providers_t kms_providers;
+    mc_named_kms_provider_map_t *nkpm;
     mongocrypt_hmac_fn sign_rsaes_pkcs1_v1_5;
     void *sign_ctx;
 

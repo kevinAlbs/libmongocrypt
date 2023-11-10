@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#include <mc-named-kms-providers.h>
+#include <mongocrypt-opts-private.h>
 
 #include <kms_message/kms_b64.h> // kms_message_b64_pton
 #include <test-mongocrypt.h>
