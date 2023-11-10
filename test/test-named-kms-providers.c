@@ -16,11 +16,11 @@
 
 #include "test-mongocrypt.h"
 
-#define LOCAL_KEK_BASE64                                                                                               \
+#define LOCAL_KEK1_BASE64                                                                                              \
     "+ol0TFyLuVvKFSqGzOFGuaOGQnnyfAqalhOv3II/VSxQTCORCGhOmw/IxhthGx0r"                                                 \
     "2R/NpMWc91qQ8Ieho4QuE9ucToTnpJ4OquFpdZv2IcO4gey3ecZGCl9jPDig8F+a"
 
-#define MYLOCAL_KEK_BASE64                                                                                             \
+#define LOCAL_KEK2_BASE64                                                                                              \
     "yPSpsO8FoVkmt+qdTDnw/pJaKriwfI6NLD1yse3BZLd3ZcXb3rAVJEA+/yu/vPzE"                                                 \
     "8ju7OYTV63AwfLor8Hg9qzo8lyYC6H3RSfdJ9g9aXdCRfGZJgpbpchJUjR06JMLR"
 
@@ -31,8 +31,8 @@ static void test_configuring_named_kms_providers(_mongocrypt_tester_t *tester) {
     {
         mongocrypt_t *crypt = mongocrypt_new();
         mongocrypt_binary_t *kms_providers = TEST_BSON(BSON_STR({"local" : {"key" : "%s"}, "local:2" : {"key" : "%s"}}),
-                                                       LOCAL_KEK_BASE64,
-                                                       MYLOCAL_KEK_BASE64);
+                                                       LOCAL_KEK1_BASE64,
+                                                       LOCAL_KEK2_BASE64);
         bool ok = mongocrypt_setopt_kms_providers(crypt, kms_providers);
         ASSERT_OK(ok, crypt);
         mongocrypt_destroy(crypt);
@@ -53,7 +53,7 @@ static void test_mongocrypt_named_kms_provider_parse(_mongocrypt_tester_t *teste
     {
         _mongocrypt_named_kms_provider_t *nkp =
             _mongocrypt_named_kms_provider_new("local:name",
-                                               TMP_BSON(BSON_STR({"key" : "%s"}), MYLOCAL_KEK_BASE64),
+                                               TMP_BSON(BSON_STR({"key" : "%s"}), LOCAL_KEK1_BASE64),
                                                status);
         ASSERT_OK_STATUS(nkp != NULL, status);
         ASSERT(nkp->type == MONGOCRYPT_KMS_PROVIDER_LOCAL);
@@ -64,7 +64,7 @@ static void test_mongocrypt_named_kms_provider_parse(_mongocrypt_tester_t *teste
     {
         _mongocrypt_named_kms_provider_t *nkp =
             _mongocrypt_named_kms_provider_new("foo:name",
-                                               TMP_BSON(BSON_STR({"key" : "%s"}), MYLOCAL_KEK_BASE64),
+                                               TMP_BSON(BSON_STR({"key" : "%s"}), LOCAL_KEK1_BASE64),
                                                status);
         ASSERT_FAILS_STATUS(nkp != NULL, status, "unknown prefix");
     }
@@ -72,23 +72,21 @@ static void test_mongocrypt_named_kms_provider_parse(_mongocrypt_tester_t *teste
     // Parsing an empty name is an error.
     {
         _mongocrypt_named_kms_provider_t *nkp =
-            _mongocrypt_named_kms_provider_new("local:",
-                                               TMP_BSON(BSON_STR({"key" : "%s"}), MYLOCAL_KEK_BASE64),
-                                               status);
+            _mongocrypt_named_kms_provider_new("local:", TMP_BSON(BSON_STR({"key" : "%s"}), LOCAL_KEK1_BASE64), status);
         ASSERT_FAILS_STATUS(nkp != NULL, status, "empty name");
     }
 
     // Parsing an empty prefix is an error.
     {
         _mongocrypt_named_kms_provider_t *nkp =
-            _mongocrypt_named_kms_provider_new(":name", TMP_BSON(BSON_STR({"key" : "%s"}), MYLOCAL_KEK_BASE64), status);
+            _mongocrypt_named_kms_provider_new(":name", TMP_BSON(BSON_STR({"key" : "%s"}), LOCAL_KEK1_BASE64), status);
         ASSERT_FAILS_STATUS(nkp != NULL, status, "empty prefix");
     }
 
     // Parsing no prefix is an error.
     {
         _mongocrypt_named_kms_provider_t *nkp =
-            _mongocrypt_named_kms_provider_new("local", TMP_BSON(BSON_STR({"key" : "%s"}), MYLOCAL_KEK_BASE64), status);
+            _mongocrypt_named_kms_provider_new("local", TMP_BSON(BSON_STR({"key" : "%s"}), LOCAL_KEK1_BASE64), status);
         ASSERT_FAILS_STATUS(nkp != NULL, status, "missing colon");
     }
 
@@ -96,7 +94,7 @@ static void test_mongocrypt_named_kms_provider_parse(_mongocrypt_tester_t *teste
     {
         _mongocrypt_named_kms_provider_t *nkp =
             _mongocrypt_named_kms_provider_new("local:name:foo",
-                                               TMP_BSON(BSON_STR({"key" : "%s"}), MYLOCAL_KEK_BASE64),
+                                               TMP_BSON(BSON_STR({"key" : "%s"}), LOCAL_KEK1_BASE64),
                                                status);
         ASSERT_FAILS_STATUS(nkp != NULL, status, "extra colon");
     }
