@@ -351,3 +351,7 @@ void mc_named_kms_provider_map_put(mc_named_kms_provider_map_t *nkpm, const mc_n
     }
     _mc_array_append_val(&nkpm->entries, to_put);
 }
+
+bool mc_named_kms_provider_map_is_empty(const mc_named_kms_provider_map_t *nkpm) {
+    return nkpm->entries.len == 0;
+}

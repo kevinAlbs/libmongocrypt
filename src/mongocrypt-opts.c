@@ -113,7 +113,8 @@ bool _mongocrypt_opts_kms_providers_validate(_mongocrypt_opts_t *opts,
     BSON_ASSERT_PARAM(opts);
     BSON_ASSERT_PARAM(kms_providers);
 
-    if (!kms_providers->configured_providers && !kms_providers->need_credentials) {
+    if (!kms_providers->configured_providers && !kms_providers->need_credentials
+        && mc_named_kms_provider_map_is_empty(opts->nkpm)) {
         CLIENT_ERR("no kms provider set");
         return false;
     }

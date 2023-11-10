@@ -93,6 +93,7 @@ bool mc_named_kms_provider_map_has(mc_named_kms_provider_map_t *nkpm, const char
 const mc_named_kms_provider_t *mc_named_kms_provider_map_get(mc_named_kms_provider_map_t *nkpm, const char *key);
 // `mongocrypt_named_kms_provider_map_put` overwrites an entry if `nkp->name` is present in the map.
 void mc_named_kms_provider_map_put(mc_named_kms_provider_map_t *nkpm, const mc_named_kms_provider_t *nkp);
+bool mc_named_kms_provider_map_is_empty(const mc_named_kms_provider_map_t *nkpm);
 
 typedef struct {
     mongocrypt_log_fn_t log_fn;

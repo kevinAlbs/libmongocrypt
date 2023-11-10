@@ -30,7 +30,7 @@
 #define BSON_STR(...) #__VA_ARGS__
 
 static void test_configuring_named_kms_providers(_mongocrypt_tester_t *tester) {
-    // Test that a named local KMS provider can be set.
+    // Test that a named KMS provider can be set.
     {
         mongocrypt_t *crypt = mongocrypt_new();
         mongocrypt_binary_t *kms_providers = TEST_BSON(BSON_STR({"local" : {"key" : "%s"}, "local:2" : {"key" : "%s"}}),
@@ -38,6 +38,7 @@ static void test_configuring_named_kms_providers(_mongocrypt_tester_t *tester) {
                                                        LOCAL_KEK2_BASE64);
         bool ok = mongocrypt_setopt_kms_providers(crypt, kms_providers);
         ASSERT_OK(ok, crypt);
+        ASSERT_OK(mongocrypt_init(crypt), crypt);
         mongocrypt_destroy(crypt);
     }
 
@@ -47,6 +48,16 @@ static void test_configuring_named_kms_providers(_mongocrypt_tester_t *tester) {
         mongocrypt_binary_t *kms_providers = TEST_BSON(BSON_STR({"foo:bar" : {"key" : "%s"}}), LOCAL_KEK1_BASE64);
         bool ok = mongocrypt_setopt_kms_providers(crypt, kms_providers);
         ASSERT_FAILS(ok, crypt, "invalid KMS provider");
+        mongocrypt_destroy(crypt);
+    }
+
+    // Test that only configuring named KMS provider is OK.
+    {
+        mongocrypt_t *crypt = mongocrypt_new();
+        mongocrypt_binary_t *kms_providers = TEST_BSON(BSON_STR({"local:1" : {"key" : "%s"}}), LOCAL_KEK1_BASE64);
+        bool ok = mongocrypt_setopt_kms_providers(crypt, kms_providers);
+        ASSERT_OK(ok, crypt);
+        ASSERT_OK(mongocrypt_init(crypt), crypt);
         mongocrypt_destroy(crypt);
     }
 }
