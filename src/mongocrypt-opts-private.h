@@ -74,6 +74,19 @@ _mongocrypt_named_kms_provider_t *
 _mongocrypt_named_kms_provider_new(const char *name, const bson_t *def, mongocrypt_status_t *status);
 _mongocrypt_named_kms_provider_t *_mongocrypt_named_kms_provider_copy(const _mongocrypt_named_kms_provider_t *nkp);
 void _mongocrypt_named_kms_provider_destroy(_mongocrypt_named_kms_provider_t *nkp);
+
+typedef struct __mongocrypt_named_kms_provider_map_t _mongocrypt_named_kms_provider_map_t;
+
+_mongocrypt_named_kms_provider_map_t *_mongocrypt_named_kms_provider_map_new(void);
+void _mongocrypt_named_kms_provider_map_destroy(_mongocrypt_named_kms_provider_map_t *nkpm);
+bool _mongocrypt_named_kms_provider_map_has(_mongocrypt_named_kms_provider_map_t *nkpm, const char *key);
+// `mongocrypt_named_kms_provider_map_get` returns NULL if `name` is not in the map.
+const _mongocrypt_named_kms_provider_t *
+_mongocrypt_named_kms_provider_map_get(_mongocrypt_named_kms_provider_map_t *nkpm, const char *key);
+// `mongocrypt_named_kms_provider_map_put` overwrites an entry if `nkp->name` is present in the map.
+void _mongocrypt_named_kms_provider_map_put(_mongocrypt_named_kms_provider_map_t *nkpm,
+                                            const _mongocrypt_named_kms_provider_t *nkp);
+
 typedef struct {
     int configured_providers; /* A bit set of _mongocrypt_kms_provider_t */
     int need_credentials;     /* A bit set of _mongocrypt_kms_provider_t */

@@ -14,7 +14,8 @@
  * limitations under the License.
  */
 
-#include "test-mongocrypt.h"
+#include <kms_message/kms_b64.h> // kms_message_b64_pton
+#include <test-mongocrypt.h>
 
 #define LOCAL_KEK1_BASE64                                                                                              \
     "+ol0TFyLuVvKFSqGzOFGuaOGQnnyfAqalhOv3II/VSxQTCORCGhOmw/IxhthGx0r"                                                 \
@@ -37,6 +38,135 @@ static void test_configuring_named_kms_providers(_mongocrypt_tester_t *tester) {
         ASSERT_OK(ok, crypt);
         mongocrypt_destroy(crypt);
     }
+}
+
+static void test_mongocrypt_named_kms_provider_map(_mongocrypt_tester_t *tester) {
+    // Create an unused `mongocrypt_t` to initialize library with `_mongocrypt_do_init`. Otherwise, parsing base64 may
+    // fail.
+    {
+        mongocrypt_t *unused = mongocrypt_new();
+        mongocrypt_destroy(unused);
+    }
+
+    mongocrypt_status_t *status = mongocrypt_status_new();
+
+    _mongocrypt_named_kms_provider_t *nkp1, *nkp2;
+    // Create two named KMS providers to use in tests.
+    {
+        nkp1 = _mongocrypt_named_kms_provider_new("local:1",
+                                                  TMP_BSON(BSON_STR({"key" : "%s"}), LOCAL_KEK1_BASE64),
+                                                  status);
+        ASSERT_OK_STATUS(nkp1 != NULL, status);
+        nkp2 = _mongocrypt_named_kms_provider_new("local:2",
+                                                  TMP_BSON(BSON_STR({"key" : "%s"}), LOCAL_KEK2_BASE64),
+                                                  status);
+        ASSERT_OK_STATUS(nkp2 != NULL, status);
+    }
+
+    _mongocrypt_buffer_t kek1_buf, kek2_buf;
+    // Create buffers for KEK1 and KEK2 to assert expected data in tests.
+    {
+        _mongocrypt_buffer_init(&kek1_buf);
+        _mongocrypt_buffer_resize(&kek1_buf, MONGOCRYPT_KEY_LEN);
+        int result_len = kms_message_b64_pton(LOCAL_KEK1_BASE64, kek1_buf.data, (size_t)kek1_buf.len);
+        ASSERT_CMPINT(result_len, ==, MONGOCRYPT_KEY_LEN);
+
+        _mongocrypt_buffer_init(&kek2_buf);
+        _mongocrypt_buffer_resize(&kek2_buf, MONGOCRYPT_KEY_LEN);
+        result_len = kms_message_b64_pton(LOCAL_KEK2_BASE64, kek2_buf.data, (size_t)kek2_buf.len);
+        ASSERT_CMPINT(result_len, ==, MONGOCRYPT_KEY_LEN);
+    }
+
+    // Test inserting one entry.
+    {
+        _mongocrypt_named_kms_provider_map_t *nkpm = _mongocrypt_named_kms_provider_map_new();
+        ASSERT(!_mongocrypt_named_kms_provider_map_has(nkpm, "local:1"));
+        _mongocrypt_named_kms_provider_map_put(nkpm, nkp1);
+        ASSERT(_mongocrypt_named_kms_provider_map_has(nkpm, "local:1"));
+        const _mongocrypt_named_kms_provider_t *got = _mongocrypt_named_kms_provider_map_get(nkpm, "local:1");
+        ASSERT(got);
+        ASSERT_STREQUAL(got->key, "local:1");
+        ASSERT(got->type == MONGOCRYPT_KMS_PROVIDER_LOCAL);
+        ASSERT_CMPBUF(kek1_buf, got->value.local.key);
+        _mongocrypt_named_kms_provider_map_destroy(nkpm);
+    }
+
+    // Test inserting two entries.
+    {
+        _mongocrypt_named_kms_provider_map_t *nkpm = _mongocrypt_named_kms_provider_map_new();
+        // Insert first.
+        {
+            ASSERT(!_mongocrypt_named_kms_provider_map_has(nkpm, "local:1"));
+            _mongocrypt_named_kms_provider_map_put(nkpm, nkp1);
+            ASSERT(_mongocrypt_named_kms_provider_map_has(nkpm, "local:1"));
+            const _mongocrypt_named_kms_provider_t *got = _mongocrypt_named_kms_provider_map_get(nkpm, "local:1");
+            ASSERT(got);
+            ASSERT_STREQUAL(got->key, "local:1");
+            ASSERT(got->type == MONGOCRYPT_KMS_PROVIDER_LOCAL);
+            ASSERT_CMPBUF(kek1_buf, got->value.local.key);
+        }
+
+        // Insert second.
+        {
+            ASSERT(!_mongocrypt_named_kms_provider_map_has(nkpm, "local:2"));
+            _mongocrypt_named_kms_provider_map_put(nkpm, nkp2);
+            ASSERT(_mongocrypt_named_kms_provider_map_has(nkpm, "local:2"));
+            const _mongocrypt_named_kms_provider_t *got = _mongocrypt_named_kms_provider_map_get(nkpm, "local:2");
+            ASSERT(got);
+            ASSERT_STREQUAL(got->key, "local:2");
+            ASSERT(got->type == MONGOCRYPT_KMS_PROVIDER_LOCAL);
+            ASSERT_CMPBUF(kek2_buf, got->value.local.key);
+        }
+        _mongocrypt_named_kms_provider_map_destroy(nkpm);
+    }
+
+    // Test overwriting an entry.
+    {
+        _mongocrypt_named_kms_provider_map_t *nkpm = _mongocrypt_named_kms_provider_map_new();
+        // Insert first.
+        {
+            ASSERT(!_mongocrypt_named_kms_provider_map_has(nkpm, "local:1"));
+            _mongocrypt_named_kms_provider_map_put(nkpm, nkp1);
+            ASSERT(_mongocrypt_named_kms_provider_map_has(nkpm, "local:1"));
+            const _mongocrypt_named_kms_provider_t *got = _mongocrypt_named_kms_provider_map_get(nkpm, "local:1");
+            ASSERT(got);
+            ASSERT_STREQUAL(got->key, "local:1");
+            ASSERT(got->type == MONGOCRYPT_KMS_PROVIDER_LOCAL);
+            ASSERT_CMPBUF(kek1_buf, got->value.local.key);
+        }
+
+        // Overwrite 'local:1' with a key with a different KEK.
+        {
+            _mongocrypt_named_kms_provider_t *nkp1_with_kek2 =
+                _mongocrypt_named_kms_provider_new("local:1",
+                                                   TMP_BSON(BSON_STR({"key" : "%s"}), LOCAL_KEK2_BASE64),
+                                                   status);
+            _mongocrypt_named_kms_provider_map_put(nkpm, nkp1_with_kek2);
+            ASSERT(_mongocrypt_named_kms_provider_map_has(nkpm, "local:1"));
+            const _mongocrypt_named_kms_provider_t *got = _mongocrypt_named_kms_provider_map_get(nkpm, "local:1");
+            ASSERT(got);
+            ASSERT_STREQUAL(got->key, "local:1");
+            ASSERT(got->type == MONGOCRYPT_KMS_PROVIDER_LOCAL);
+            ASSERT_CMPBUF(kek2_buf, got->value.local.key);
+
+            _mongocrypt_named_kms_provider_destroy(nkp1_with_kek2);
+        }
+        _mongocrypt_named_kms_provider_map_destroy(nkpm);
+    }
+    // Test getting a missing entry.
+    {
+        _mongocrypt_named_kms_provider_map_t *nkpm = _mongocrypt_named_kms_provider_map_new();
+        ASSERT(!_mongocrypt_named_kms_provider_map_has(nkpm, "local:2"));
+        const _mongocrypt_named_kms_provider_t *got = _mongocrypt_named_kms_provider_map_get(nkpm, "local:2");
+        ASSERT(!got);
+        _mongocrypt_named_kms_provider_map_destroy(nkpm);
+    }
+
+    _mongocrypt_buffer_cleanup(&kek2_buf);
+    _mongocrypt_buffer_cleanup(&kek1_buf);
+    _mongocrypt_named_kms_provider_destroy(nkp2);
+    _mongocrypt_named_kms_provider_destroy(nkp1);
+    mongocrypt_status_destroy(status);
 }
 
 static void test_mongocrypt_named_kms_provider_parse(_mongocrypt_tester_t *tester) {
@@ -104,5 +234,6 @@ static void test_mongocrypt_named_kms_provider_parse(_mongocrypt_tester_t *teste
 
 void _mongocrypt_tester_install_named_kms_providers(_mongocrypt_tester_t *tester) {
     INSTALL_TEST(test_configuring_named_kms_providers);
+    INSTALL_TEST(test_mongocrypt_named_kms_provider_map);
     INSTALL_TEST(test_mongocrypt_named_kms_provider_parse);
 }
