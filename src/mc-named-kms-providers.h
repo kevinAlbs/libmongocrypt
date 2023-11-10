@@ -17,7 +17,7 @@
 #ifndef MC_NAMED_KMS_PROVIDERS_H
 #define MC_NAMED_KMS_PROVIDERS_H
 
-// mc-named-kms-providers.h provides interfaces for storing and retrieving named KMS providers.
+// mc-named-kms-providers.h is a private header providing interfaces for storing and retrieving named KMS providers.
 
 #include <bson/bson.h>               // bson_t
 #include <mongocrypt-opts-private.h> // `_mongocrypt_opts_kms_*` types.
