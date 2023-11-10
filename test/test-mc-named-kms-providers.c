@@ -28,6 +28,23 @@
     "8ju7OYTV63AwfLor8Hg9qzo8lyYC6H3RSfdJ9g9aXdCRfGZJgpbpchJUjR06JMLR"
 
 #define BSON_STR(...) #__VA_ARGS__
+static void test_mongocrypt_kek_parse_with_named_kms_provider(_mongocrypt_tester_t *tester) {
+    // Create an unused `mongocrypt_t` to initialize library with `_mongocrypt_do_init`. Otherwise, parsing base64 may
+    // fail.
+    {
+        mongocrypt_t *unused = mongocrypt_new();
+        mongocrypt_destroy(unused);
+    }
+
+    mongocrypt_status_t *status = mongocrypt_status_new();
+    _mongocrypt_kek_t kek = (_mongocrypt_kek_t){0};
+
+    bool ok = _mongocrypt_kek_parse_owned(TMP_BSON(BSON_STR({"provider" : "local:2"})), &kek, status);
+    ASSERT_OK_STATUS(ok, status);
+
+    _mongocrypt_kek_cleanup(&kek);
+    mongocrypt_status_destroy(status);
+}
 
 static void test_configuring_named_kms_providers(_mongocrypt_tester_t *tester) {
     // Test that a named KMS provider can be set.
@@ -246,4 +263,5 @@ void _mongocrypt_tester_install_named_kms_providers(_mongocrypt_tester_t *tester
     INSTALL_TEST(test_configuring_named_kms_providers);
     INSTALL_TEST(test_mc_named_kms_provider_map);
     INSTALL_TEST(test_mc_named_kms_provider_parse);
+    INSTALL_TEST(test_mongocrypt_kek_parse_with_named_kms_provider);
 }
