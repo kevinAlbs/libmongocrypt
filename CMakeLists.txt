@@ -112,6 +112,7 @@ set (MONGOCRYPT_SOURCES
    src/mc-fle2-payload-uev-common.c
    src/mc-fle2-payload-uev-v2.c
    src/mc-fle2-rfds.c
+   src/mc-named-kms-providers.c
    src/mc-range-edge-generation.c
    src/mc-range-mincover.c
    src/mc-range-encoding.c
@@ -462,6 +463,7 @@ set (TEST_MONGOCRYPT_SOURCES
    test/test-mc-fle2-payload-uev.c
    test/test-mc-fle2-payload-uev-v2.c
    test/test-mc-fle2-rfds.c
+   test/test-mc-named-kms-providers.c
    test/test-mc-range-edge-generation.c
    test/test-mc-range-mincover.c
    test/test-mc-rangeopts.c
@@ -500,7 +502,6 @@ set (TEST_MONGOCRYPT_SOURCES
    test/test-mongocrypt-traverse-util.c
    test/test-mongocrypt-util.c
    test/test-mongocrypt.c
-   test/test-named-kms-providers.c
    )
 
 # Define test-mongocrypt
