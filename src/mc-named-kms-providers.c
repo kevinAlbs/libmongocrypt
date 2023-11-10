@@ -19,15 +19,15 @@
 #include <mongocrypt-private.h>        // CLIENT_ERR
 
 // `_mongocrypt_named_kms_provider_from_bson` returns NULL on error and sets an error status.
-_mongocrypt_named_kms_provider_t *
-_mongocrypt_named_kms_provider_new(const char *key, const bson_t *def, mongocrypt_status_t *status) {
+mc_named_kms_provider_t *
+mc_named_kms_provider_new(const char *key, const bson_t *def, mongocrypt_status_t *status) {
     BSON_ASSERT_PARAM(key);
     BSON_ASSERT_PARAM(def);
     BSON_ASSERT(status || true); // Optional.
 
     char *prefix = NULL;
     char *name = NULL;
-    _mongocrypt_named_kms_provider_t *nkp = bson_malloc0(sizeof(_mongocrypt_named_kms_provider_t));
+    mc_named_kms_provider_t *nkp = bson_malloc0(sizeof(mc_named_kms_provider_t));
     bool ok = false;
 
     nkp->key = bson_strdup(key);
@@ -202,7 +202,7 @@ succeed:
     ok = true;
 fail:
     if (!ok) {
-        _mongocrypt_named_kms_provider_destroy(nkp);
+        mc_named_kms_provider_destroy(nkp);
         nkp = NULL;
     }
     bson_free(name);
@@ -210,12 +210,12 @@ fail:
     return nkp;
 }
 
-_mongocrypt_named_kms_provider_t *_mongocrypt_named_kms_provider_copy(const _mongocrypt_named_kms_provider_t *nkp) {
+mc_named_kms_provider_t *mc_named_kms_provider_copy(const mc_named_kms_provider_t *nkp) {
     if (!nkp) {
         return NULL;
     }
 
-    _mongocrypt_named_kms_provider_t *nkp_copy = bson_malloc0(sizeof(_mongocrypt_named_kms_provider_t));
+    mc_named_kms_provider_t *nkp_copy = bson_malloc0(sizeof(mc_named_kms_provider_t));
 
     nkp_copy->type = nkp->type;
     nkp_copy->key = bson_strdup(nkp->key);
@@ -251,7 +251,7 @@ _mongocrypt_named_kms_provider_t *_mongocrypt_named_kms_provider_copy(const _mon
     return nkp_copy;
 }
 
-void _mongocrypt_named_kms_provider_destroy(_mongocrypt_named_kms_provider_t *nkp) {
+void mc_named_kms_provider_destroy(mc_named_kms_provider_t *nkp) {
     if (!nkp) {
         return;
     }
@@ -286,33 +286,33 @@ void _mongocrypt_named_kms_provider_destroy(_mongocrypt_named_kms_provider_t *nk
 
 #include "mc-array-private.h"
 
-struct __mongocrypt_named_kms_provider_map_t {
+struct _mc_named_kms_provider_map_t {
     mc_array_t entries;
 };
 
-_mongocrypt_named_kms_provider_map_t *_mongocrypt_named_kms_provider_map_new(void) {
-    _mongocrypt_named_kms_provider_map_t *nkpm = bson_malloc0(sizeof(_mongocrypt_named_kms_provider_map_t));
-    _mc_array_init(&nkpm->entries, sizeof(_mongocrypt_named_kms_provider_t *));
+mc_named_kms_provider_map_t *mc_named_kms_provider_map_new(void) {
+    mc_named_kms_provider_map_t *nkpm = bson_malloc0(sizeof(mc_named_kms_provider_map_t));
+    _mc_array_init(&nkpm->entries, sizeof(mc_named_kms_provider_t *));
     return nkpm;
 }
 
-void _mongocrypt_named_kms_provider_map_destroy(_mongocrypt_named_kms_provider_map_t *nkpm) {
+void mc_named_kms_provider_map_destroy(mc_named_kms_provider_map_t *nkpm) {
     if (!nkpm) {
         return;
     }
     for (size_t i = 0; i < nkpm->entries.len; i++) {
-        _mongocrypt_named_kms_provider_t *nkp = _mc_array_index(&nkpm->entries, _mongocrypt_named_kms_provider_t *, i);
-        _mongocrypt_named_kms_provider_destroy(nkp);
+        mc_named_kms_provider_t *nkp = _mc_array_index(&nkpm->entries, mc_named_kms_provider_t *, i);
+        mc_named_kms_provider_destroy(nkp);
     }
     _mc_array_destroy(&nkpm->entries);
     bson_free(nkpm);
 }
 
-bool _mongocrypt_named_kms_provider_map_has(_mongocrypt_named_kms_provider_map_t *nkpm, const char *key) {
+bool mc_named_kms_provider_map_has(mc_named_kms_provider_map_t *nkpm, const char *key) {
     BSON_ASSERT_PARAM(nkpm);
     BSON_ASSERT_PARAM(key);
     for (size_t i = 0; i < nkpm->entries.len; i++) {
-        _mongocrypt_named_kms_provider_t *nkp = _mc_array_index(&nkpm->entries, _mongocrypt_named_kms_provider_t *, i);
+        mc_named_kms_provider_t *nkp = _mc_array_index(&nkpm->entries, mc_named_kms_provider_t *, i);
         if (0 == strcmp(nkp->key, key)) {
             return true;
         }
@@ -321,12 +321,12 @@ bool _mongocrypt_named_kms_provider_map_has(_mongocrypt_named_kms_provider_map_t
 }
 
 // `mongocrypt_named_kms_provider_map_get` returns NULL if `key` is not in the map.
-const _mongocrypt_named_kms_provider_t *
-_mongocrypt_named_kms_provider_map_get(_mongocrypt_named_kms_provider_map_t *nkpm, const char *key) {
+const mc_named_kms_provider_t *
+mc_named_kms_provider_map_get(mc_named_kms_provider_map_t *nkpm, const char *key) {
     BSON_ASSERT_PARAM(nkpm);
     BSON_ASSERT_PARAM(key);
     for (size_t i = 0; i < nkpm->entries.len; i++) {
-        _mongocrypt_named_kms_provider_t *nkp = _mc_array_index(&nkpm->entries, _mongocrypt_named_kms_provider_t *, i);
+        mc_named_kms_provider_t *nkp = _mc_array_index(&nkpm->entries, mc_named_kms_provider_t *, i);
         if (0 == strcmp(nkp->key, key)) {
             return nkp;
         }
@@ -335,19 +335,19 @@ _mongocrypt_named_kms_provider_map_get(_mongocrypt_named_kms_provider_map_t *nkp
 }
 
 // `mongocrypt_named_kms_provider_map_put` requires the KMS provider name must not be present in the map.
-void _mongocrypt_named_kms_provider_map_put(_mongocrypt_named_kms_provider_map_t *nkpm,
-                                            const _mongocrypt_named_kms_provider_t *new_nkp) {
+void mc_named_kms_provider_map_put(mc_named_kms_provider_map_t *nkpm,
+                                            const mc_named_kms_provider_t *new_nkp) {
     BSON_ASSERT_PARAM(nkpm);
     BSON_ASSERT_PARAM(new_nkp);
-    _mongocrypt_named_kms_provider_t *to_put = _mongocrypt_named_kms_provider_copy(new_nkp);
+    mc_named_kms_provider_t *to_put = mc_named_kms_provider_copy(new_nkp);
 
     // Check if there is an existing entry.
     for (size_t i = 0; i < nkpm->entries.len; i++) {
-        _mongocrypt_named_kms_provider_t *nkp = _mc_array_index(&nkpm->entries, _mongocrypt_named_kms_provider_t *, i);
+        mc_named_kms_provider_t *nkp = _mc_array_index(&nkpm->entries, mc_named_kms_provider_t *, i);
         if (0 == strcmp(nkp->key, new_nkp->key)) {
             // Overwrite.
-            _mongocrypt_named_kms_provider_destroy(nkp);
-            _mc_array_index(&nkpm->entries, _mongocrypt_named_kms_provider_t *, i) = to_put;
+            mc_named_kms_provider_destroy(nkp);
+            _mc_array_index(&nkpm->entries, mc_named_kms_provider_t *, i) = to_put;
             return;
         }
     }

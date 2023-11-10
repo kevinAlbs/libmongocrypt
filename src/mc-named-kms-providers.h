@@ -34,24 +34,21 @@ typedef struct {
         _mongocrypt_opts_kms_provider_local_t local;
         _mongocrypt_opts_kms_provider_kmip_t kmip;
     } value;
-} _mongocrypt_named_kms_provider_t;
+} mc_named_kms_provider_t;
 
 // `_mongocrypt_named_kms_provider_from_bson` returns NULL on error and sets an error status.
-_mongocrypt_named_kms_provider_t *
-_mongocrypt_named_kms_provider_new(const char *name, const bson_t *def, mongocrypt_status_t *status);
-_mongocrypt_named_kms_provider_t *_mongocrypt_named_kms_provider_copy(const _mongocrypt_named_kms_provider_t *nkp);
-void _mongocrypt_named_kms_provider_destroy(_mongocrypt_named_kms_provider_t *nkp);
+mc_named_kms_provider_t *mc_named_kms_provider_new(const char *name, const bson_t *def, mongocrypt_status_t *status);
+mc_named_kms_provider_t *mc_named_kms_provider_copy(const mc_named_kms_provider_t *nkp);
+void mc_named_kms_provider_destroy(mc_named_kms_provider_t *nkp);
 
-typedef struct __mongocrypt_named_kms_provider_map_t _mongocrypt_named_kms_provider_map_t;
+typedef struct _mc_named_kms_provider_map_t mc_named_kms_provider_map_t;
 
-_mongocrypt_named_kms_provider_map_t *_mongocrypt_named_kms_provider_map_new(void);
-void _mongocrypt_named_kms_provider_map_destroy(_mongocrypt_named_kms_provider_map_t *nkpm);
-bool _mongocrypt_named_kms_provider_map_has(_mongocrypt_named_kms_provider_map_t *nkpm, const char *key);
+mc_named_kms_provider_map_t *mc_named_kms_provider_map_new(void);
+void mc_named_kms_provider_map_destroy(mc_named_kms_provider_map_t *nkpm);
+bool mc_named_kms_provider_map_has(mc_named_kms_provider_map_t *nkpm, const char *key);
 // `mongocrypt_named_kms_provider_map_get` returns NULL if `name` is not in the map.
-const _mongocrypt_named_kms_provider_t *
-_mongocrypt_named_kms_provider_map_get(_mongocrypt_named_kms_provider_map_t *nkpm, const char *key);
+const mc_named_kms_provider_t *mc_named_kms_provider_map_get(mc_named_kms_provider_map_t *nkpm, const char *key);
 // `mongocrypt_named_kms_provider_map_put` overwrites an entry if `nkp->name` is present in the map.
-void _mongocrypt_named_kms_provider_map_put(_mongocrypt_named_kms_provider_map_t *nkpm,
-                                            const _mongocrypt_named_kms_provider_t *nkp);
+void mc_named_kms_provider_map_put(mc_named_kms_provider_map_t *nkpm, const mc_named_kms_provider_t *nkp);
 
 #endif // MC_NAMED_KMS_PROVIDERS_H
