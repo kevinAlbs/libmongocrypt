@@ -1093,12 +1093,14 @@ bool mongocrypt_setopt_kms_providers(mongocrypt_t *crypt, mongocrypt_binary_t *k
 
     return _mongocrypt_parse_kms_providers(kms_providers_definition,
                                            &crypt->opts.kms_providers,
+                                           crypt->opts.nkpm,
                                            crypt->status,
                                            &crypt->log);
 }
 
 bool _mongocrypt_parse_kms_providers(mongocrypt_binary_t *kms_providers_definition,
                                      _mongocrypt_opts_kms_providers_t *kms_providers,
+                                     mc_named_kms_provider_map_t *nkpm,
                                      mongocrypt_status_t *status,
                                      _mongocrypt_log_t *log) {
     bson_t as_bson;
@@ -1106,6 +1108,8 @@ bool _mongocrypt_parse_kms_providers(mongocrypt_binary_t *kms_providers_definiti
 
     BSON_ASSERT_PARAM(kms_providers_definition);
     BSON_ASSERT_PARAM(kms_providers);
+    BSON_ASSERT(nkpm || true); // May be NULL. If NULL, named KMS providers are not supported.
+
     if (!_mongocrypt_binary_to_bson(kms_providers_definition, &as_bson) || !bson_iter_init(&iter, &as_bson)) {
         CLIENT_ERR("invalid BSON");
         return false;
@@ -1303,6 +1307,15 @@ bool _mongocrypt_parse_kms_providers(mongocrypt_binary_t *kms_providers_definiti
                 return false;
             }
             kms_providers->configured_providers |= MONGOCRYPT_KMS_PROVIDER_KMIP;
+        } else if (nkpm && strstr(field_name, ":") != NULL) {
+            // Parse as a named KMS provider.
+            // Only parse if key contains a `:`. Otherwise, fall through and provide a more relevant error.
+            mc_named_kms_provider_t *nkp = mc_named_kms_provider_new(field_name, &field_bson, status);
+            if (!nkp) {
+                return false;
+            }
+            mc_named_kms_provider_map_put(nkpm, nkp);
+            mc_named_kms_provider_destroy(nkp);
         } else {
             CLIENT_ERR("unsupported KMS provider: %s", field_name);
             return false;

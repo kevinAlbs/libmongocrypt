@@ -506,6 +506,7 @@ bool mongocrypt_ctx_provide_kms_providers(mongocrypt_ctx_t *ctx, mongocrypt_bina
 
     if (!_mongocrypt_parse_kms_providers(kms_providers_definition,
                                          &ctx->per_ctx_kms_providers,
+                                         NULL /* named KMS providers not supported */,
                                          ctx->status,
                                          &ctx->crypt->log)) {
         return _mongocrypt_ctx_fail(ctx);

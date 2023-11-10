@@ -1155,6 +1155,8 @@ bool mongocrypt_ctx_kms_done(mongocrypt_ctx_t *ctx);
  * BSON input, the KMS provider settings configured for the @ref mongocrypt_t
  * at initialization are used.
  *
+ * Named KMS providers not supported.
+ *
  * @param[in] ctx The @ref mongocrypt_ctx_t object.
  * @param[in] kms_providers_definition A BSON document mapping the KMS provider
  * names to credentials.

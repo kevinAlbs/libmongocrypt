@@ -40,6 +40,15 @@ static void test_configuring_named_kms_providers(_mongocrypt_tester_t *tester) {
         ASSERT_OK(ok, crypt);
         mongocrypt_destroy(crypt);
     }
+
+    // Test that an unrecognized named KMS provider errors.
+    {
+        mongocrypt_t *crypt = mongocrypt_new();
+        mongocrypt_binary_t *kms_providers = TEST_BSON(BSON_STR({"foo:bar" : {"key" : "%s"}}), LOCAL_KEK1_BASE64);
+        bool ok = mongocrypt_setopt_kms_providers(crypt, kms_providers);
+        ASSERT_FAILS(ok, crypt, "invalid KMS provider");
+        mongocrypt_destroy(crypt);
+    }
 }
 
 static void test_mc_named_kms_provider_map(_mongocrypt_tester_t *tester) {
