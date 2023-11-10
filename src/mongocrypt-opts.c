@@ -434,6 +434,8 @@ _mongocrypt_named_kms_provider_new(const char *key, const bson_t *def, mongocryp
     _mongocrypt_named_kms_provider_t *nkp = bson_malloc0(sizeof(_mongocrypt_named_kms_provider_t));
     bool ok = false;
 
+    nkp->key = bson_strdup(key);
+
 #define KEY_HELP "Must be of form `<provider type>:<name>`. Example: `local:name`."
 
     // Parse `key` into `prefix` and `name`.
@@ -620,7 +622,7 @@ _mongocrypt_named_kms_provider_t *_mongocrypt_named_kms_provider_copy(const _mon
     _mongocrypt_named_kms_provider_t *nkp_copy = bson_malloc0(sizeof(_mongocrypt_named_kms_provider_t));
 
     nkp_copy->type = nkp->type;
-    nkp_copy->name = bson_strdup(nkp->name);
+    nkp_copy->key = bson_strdup(nkp->key);
 
     switch (nkp->type) {
     case MONGOCRYPT_KMS_PROVIDER_NONE: break;
@@ -682,6 +684,6 @@ void _mongocrypt_named_kms_provider_destroy(_mongocrypt_named_kms_provider_t *nk
     case MONGOCRYPT_KMS_PROVIDER_LOCAL: _mongocrypt_buffer_cleanup(&nkp->value.local.key); break;
     }
 
-    bson_free(nkp->name);
+    bson_free(nkp->key);
     bson_free(nkp);
 }

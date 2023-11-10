@@ -57,7 +57,7 @@ typedef struct {
 } _mongocrypt_opts_kms_provider_kmip_t;
 
 typedef struct {
-    char *name;
+    char *key; // `key` stores "<prefix>:<name>". Example: "local:myname".
     _mongocrypt_kms_provider_t type;
 
     union {
