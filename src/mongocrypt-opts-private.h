@@ -79,6 +79,10 @@ typedef struct {
     } value;
 } mc_named_kms_provider_t;
 
+// `mc_named_provider_parse_key` tries to parse `key` as the form `<prefix>:<name>` and sets `prefix_out` and
+// `name_out` to copies that must be freed. On failure, `prefix_out` and `name_out` are set to NULL.
+bool mc_named_provider_parse_key(const char *key, char **prefix_out, char **name_out, mongocrypt_status_t *status);
+
 // `_mongocrypt_named_kms_provider_from_bson` returns NULL on error and sets an error status.
 mc_named_kms_provider_t *mc_named_kms_provider_new(const char *name, const bson_t *def, mongocrypt_status_t *status);
 mc_named_kms_provider_t *mc_named_kms_provider_copy(const mc_named_kms_provider_t *nkp);

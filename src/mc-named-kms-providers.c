@@ -19,6 +19,46 @@
 #include <mongocrypt-crypto-private.h> // MONGOCRYPT_KEY_LEN
 #include <mongocrypt-private.h>        // CLIENT_ERR
 
+#define KEY_HELP "Must be of form `<provider type>:<name>`. Example: `local:name`."
+
+// `mc_named_provider_parse_key` tries to parse `key` as the form `<prefix>:<name`> and sets `prefix_out` and
+// `name_out` to copies that must be freed. On failure, `prefix_out` and `name_out` are set to NULL.
+bool mc_named_provider_parse_key(const char *key, char **prefix_out, char **name_out, mongocrypt_status_t *status) {
+    BSON_ASSERT_PARAM(key);
+    BSON_ASSERT_PARAM(prefix_out);
+    BSON_ASSERT_PARAM(name_out);
+    BSON_ASSERT(status || true); // Optional.
+
+    *prefix_out = NULL;
+    *name_out = NULL;
+    // Parse `key` into `prefix` and `name`.
+    {
+        const char *prefix_end = strstr(key, ":");
+        if (prefix_end == NULL) {
+            CLIENT_ERR("invalid KMS provider `%s`: missing colon. " KEY_HELP, key);
+            return false;
+        }
+        const char *next_colon = strstr(prefix_end + 1, ":");
+        if (next_colon != NULL) {
+            CLIENT_ERR("invalid KMS provider `%s`: extra colon. " KEY_HELP, key);
+            return false;
+        }
+
+        *prefix_out = bson_strndup(key, prefix_end - key);
+        if (0 == strlen(*prefix_out)) {
+            CLIENT_ERR("invalid KMS provider `%s`: empty prefix. " KEY_HELP, key);
+            return false;
+        }
+
+        *name_out = bson_strdup(prefix_end + 1);
+        if (0 == strlen(*name_out)) {
+            CLIENT_ERR("invalid KMS provider `%s`: empty name. " KEY_HELP, key);
+            return false;
+        }
+    }
+    return true;
+}
+
 // `_mongocrypt_named_kms_provider_from_bson` returns NULL on error and sets an error status.
 mc_named_kms_provider_t *mc_named_kms_provider_new(const char *key, const bson_t *def, mongocrypt_status_t *status) {
     BSON_ASSERT_PARAM(key);
@@ -32,32 +72,8 @@ mc_named_kms_provider_t *mc_named_kms_provider_new(const char *key, const bson_t
 
     nkp->key = bson_strdup(key);
 
-#define KEY_HELP "Must be of form `<provider type>:<name>`. Example: `local:name`."
-
-    // Parse `key` into `prefix` and `name`.
-    {
-        const char *prefix_end = strstr(key, ":");
-        if (prefix_end == NULL) {
-            CLIENT_ERR("invalid KMS provider `%s`: missing colon. " KEY_HELP, key);
-            goto fail;
-        }
-        const char *next_colon = strstr(prefix_end + 1, ":");
-        if (next_colon != NULL) {
-            CLIENT_ERR("invalid KMS provider `%s`: extra colon. " KEY_HELP, key);
-            goto fail;
-        }
-
-        prefix = bson_strndup(key, prefix_end - key);
-        if (0 == strlen(prefix)) {
-            CLIENT_ERR("invalid KMS provider `%s`: empty prefix. " KEY_HELP, key);
-            goto fail;
-        }
-
-        name = bson_strdup(prefix_end + 1);
-        if (0 == strlen(name)) {
-            CLIENT_ERR("invalid KMS provider `%s`: empty name. " KEY_HELP, key);
-            goto fail;
-        }
+    if (!mc_named_provider_parse_key(key, &prefix, &name, status)) {
+        goto fail;
     }
 
     if (0 == strcmp(prefix, "aws")) {
@@ -195,8 +211,6 @@ mc_named_kms_provider_t *mc_named_kms_provider_new(const char *key, const bson_t
         CLIENT_ERR("invalid KMS provider `%s`: unknown prefix `%s`. " KEY_HELP, key, prefix);
         goto fail;
     }
-
-#undef KEY_HELP
 
 succeed:
     ok = true;
@@ -355,3 +369,5 @@ void mc_named_kms_provider_map_put(mc_named_kms_provider_map_t *nkpm, const mc_n
 bool mc_named_kms_provider_map_is_empty(const mc_named_kms_provider_map_t *nkpm) {
     return nkpm->entries.len == 0;
 }
+
+#undef KEY_HELP
