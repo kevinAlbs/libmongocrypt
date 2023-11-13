@@ -47,12 +47,28 @@
 bool _mongocrypt_kek_parse_owned(const bson_t *bson, _mongocrypt_kek_t *kek, mongocrypt_status_t *status) {
     char *kms_provider = NULL;
     bool ret = false;
+    // `prefix` and `name` are only set to a non-NULL value for a named KMS provider.
+    char *prefix = NULL;
+    char *name = NULL;
 
     BSON_ASSERT_PARAM(bson);
     BSON_ASSERT_PARAM(kek);
 
     if (!_mongocrypt_parse_required_utf8(bson, "provider", &kms_provider, status)) {
         goto done;
+    }
+    kek->key = bson_strdup(kms_provider);
+
+    // If `kms_provider` contains a colon, try to parse as a named KMS provider.
+    if (strstr(kms_provider, ":") != NULL) {
+        // May be a named KMS provider of the form `<prefix>:<name>`.
+        if (!mc_named_provider_parse_key(kms_provider, &prefix, &name, status)) {
+            goto done;
+        }
+        // Re-assign `kms_provider` to the parsed `prefix`.
+        bson_free(kms_provider);
+        kms_provider = bson_strdup(prefix);
+        kek->is_named = true;
     }
 
     if (0 == strcmp(kms_provider, "aws")) {
@@ -163,12 +179,14 @@ bool _mongocrypt_kek_parse_owned(const bson_t *bson, _mongocrypt_kek_t *kek, mon
             goto done;
         }
     } else {
-        CLIENT_ERR("unrecognized KMS provider: %s", kms_provider);
+        CLIENT_ERR("unrecognized KMS provider: %s. Referencing KMS providers by name not yet supported.", kms_provider);
         goto done;
     }
 
     ret = true;
 done:
+    bson_free(name);
+    bson_free(prefix);
     bson_free(kms_provider);
     return ret;
 }
@@ -177,24 +195,22 @@ bool _mongocrypt_kek_append(const _mongocrypt_kek_t *kek, bson_t *bson, mongocry
     BSON_ASSERT_PARAM(kek);
     BSON_ASSERT_PARAM(bson);
 
+    BSON_APPEND_UTF8(bson, "provider", kek->key);
     if (kek->kms_provider == MONGOCRYPT_KMS_PROVIDER_AWS) {
-        BSON_APPEND_UTF8(bson, "provider", "aws");
         BSON_APPEND_UTF8(bson, "region", kek->provider.aws.region);
         BSON_APPEND_UTF8(bson, "key", kek->provider.aws.cmk);
         if (kek->provider.aws.endpoint) {
             BSON_APPEND_UTF8(bson, "endpoint", kek->provider.aws.endpoint->host_and_port);
         }
     } else if (kek->kms_provider == MONGOCRYPT_KMS_PROVIDER_LOCAL) {
-        BSON_APPEND_UTF8(bson, "provider", "local");
+        // Nothing.
     } else if (kek->kms_provider == MONGOCRYPT_KMS_PROVIDER_AZURE) {
-        BSON_APPEND_UTF8(bson, "provider", "azure");
         BSON_APPEND_UTF8(bson, "keyVaultEndpoint", kek->provider.azure.key_vault_endpoint->host_and_port);
         BSON_APPEND_UTF8(bson, "keyName", kek->provider.azure.key_name);
         if (kek->provider.azure.key_version) {
             BSON_APPEND_UTF8(bson, "keyVersion", kek->provider.azure.key_version);
         }
     } else if (kek->kms_provider == MONGOCRYPT_KMS_PROVIDER_GCP) {
-        BSON_APPEND_UTF8(bson, "provider", "gcp");
         BSON_APPEND_UTF8(bson, "projectId", kek->provider.gcp.project_id);
         BSON_APPEND_UTF8(bson, "location", kek->provider.gcp.location);
         BSON_APPEND_UTF8(bson, "keyRing", kek->provider.gcp.key_ring);
@@ -206,7 +222,6 @@ bool _mongocrypt_kek_append(const _mongocrypt_kek_t *kek, bson_t *bson, mongocry
             BSON_APPEND_UTF8(bson, "endpoint", kek->provider.gcp.endpoint->host_and_port);
         }
     } else if (kek->kms_provider == MONGOCRYPT_KMS_PROVIDER_KMIP) {
-        BSON_APPEND_UTF8(bson, "provider", "kmip");
         if (kek->provider.kmip.endpoint) {
             BSON_APPEND_UTF8(bson, "endpoint", kek->provider.kmip.endpoint->host_and_port);
         }
@@ -254,6 +269,8 @@ void _mongocrypt_kek_copy_to(const _mongocrypt_kek_t *src, _mongocrypt_kek_t *ds
                     || src->kms_provider == MONGOCRYPT_KMS_PROVIDER_LOCAL);
     }
     dst->kms_provider = src->kms_provider;
+    dst->key = bson_strdup(src->key);
+    dst->is_named = src->is_named;
 }
 
 void _mongocrypt_kek_cleanup(_mongocrypt_kek_t *kek) {
@@ -283,5 +300,7 @@ void _mongocrypt_kek_cleanup(_mongocrypt_kek_t *kek) {
         BSON_ASSERT(kek->kms_provider == MONGOCRYPT_KMS_PROVIDER_NONE
                     || kek->kms_provider == MONGOCRYPT_KMS_PROVIDER_LOCAL);
     }
+
+    bson_free(kek->key);
     return;
 }

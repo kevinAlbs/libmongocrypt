@@ -37,12 +37,42 @@ static void test_mongocrypt_kek_parse_with_named_kms_provider(_mongocrypt_tester
     }
 
     mongocrypt_status_t *status = mongocrypt_status_new();
-    _mongocrypt_kek_t kek = (_mongocrypt_kek_t){0};
 
-    bool ok = _mongocrypt_kek_parse_owned(TMP_BSON(BSON_STR({"provider" : "local:2"})), &kek, status);
-    ASSERT_OK_STATUS(ok, status);
+    // Can be parsed.
+    {
+        _mongocrypt_kek_t kek = (_mongocrypt_kek_t){0};
+        bool ok = _mongocrypt_kek_parse_owned(TMP_BSON(BSON_STR({"provider" : "local:2"})), &kek, status);
+        ASSERT_OK_STATUS(ok, status);
+        ASSERT_STREQUAL(kek.key, "local:2");
+        ASSERT(kek.is_named);
+        _mongocrypt_kek_cleanup(&kek);
+    }
 
-    _mongocrypt_kek_cleanup(&kek);
+    // Can be copied.
+    {
+        _mongocrypt_kek_t kek = (_mongocrypt_kek_t){0};
+        _mongocrypt_kek_t kek_copy = (_mongocrypt_kek_t){0};
+        bool ok = _mongocrypt_kek_parse_owned(TMP_BSON(BSON_STR({"provider" : "local:2"})), &kek, status);
+        ASSERT_OK_STATUS(ok, status);
+        _mongocrypt_kek_copy_to(&kek, &kek_copy);
+        ASSERT_STREQUAL(kek_copy.key, "local:2");
+        ASSERT(kek_copy.is_named);
+        _mongocrypt_kek_cleanup(&kek_copy);
+        _mongocrypt_kek_cleanup(&kek);
+    }
+
+    // Can be appended.
+    {
+        bson_t out = BSON_INITIALIZER;
+        _mongocrypt_kek_t kek = (_mongocrypt_kek_t){0};
+        bool ok = _mongocrypt_kek_parse_owned(TMP_BSON(BSON_STR({"provider" : "local:2"})), &kek, status);
+        ASSERT_OK_STATUS(ok, status);
+        ASSERT_OK_STATUS(_mongocrypt_kek_append(&kek, &out, status), status);
+        bson_destroy(&out);
+        _assert_match_bson(&out, TMP_BSON(BSON_STR({"provider" : "local:2"})));
+        _mongocrypt_kek_cleanup(&kek);
+    }
+
     mongocrypt_status_destroy(status);
 }
 
