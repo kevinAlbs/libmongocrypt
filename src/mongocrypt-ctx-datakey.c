@@ -186,8 +186,20 @@ static bool _kms_start(mongocrypt_ctx_t *ctx) {
     memset(&dkctx->kms, 0, sizeof(dkctx->kms));
     dkctx->kms_returned = false;
     if (ctx->opts.kek.kms_provider == MONGOCRYPT_KMS_PROVIDER_LOCAL) {
+        const _mongocrypt_buffer_t *kek;
+        if (ctx->opts.kek.is_named) {
+            // Assert KMS provider is configured. _mongocrypt_ctx_init verifies the KEK has a matching KMS provider.
+            BSON_ASSERT(mc_named_kms_provider_map_has(ctx->crypt->opts.nkpm, ctx->opts.kek.key));
+            const mc_named_kms_provider_t *nkp =
+                mc_named_kms_provider_map_get(ctx->crypt->opts.nkpm, ctx->opts.kek.key);
+            kek = &nkp->value.local.key;
+        } else {
+            // Assert KMS provider is configured. _mongocrypt_ctx_init verifies the KEK has a matching KMS provider.
+            BSON_ASSERT(kms_providers->configured_providers & MONGOCRYPT_KMS_PROVIDER_LOCAL);
+            kek = &kms_providers->local.key;
+        }
         if (!_mongocrypt_wrap_key(ctx->crypt->crypto,
-                                  &kms_providers->local.key,
+                                  kek,
                                   &dkctx->plaintext_key_material,
                                   &dkctx->encrypted_key_material,
                                   ctx->status)) {

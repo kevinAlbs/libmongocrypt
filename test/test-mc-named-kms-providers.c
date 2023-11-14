@@ -17,6 +17,7 @@
 #include <mongocrypt-opts-private.h>
 
 #include <kms_message/kms_b64.h> // kms_message_b64_pton
+#include <test-mongocrypt-assert-match-bson.h>
 #include <test-mongocrypt.h>
 
 #define LOCAL_KEK1_BASE64                                                                                              \
@@ -28,6 +29,55 @@
     "8ju7OYTV63AwfLor8Hg9qzo8lyYC6H3RSfdJ9g9aXdCRfGZJgpbpchJUjR06JMLR"
 
 #define BSON_STR(...) #__VA_ARGS__
+
+static void test_create_datakey_with_named_kms_provider(_mongocrypt_tester_t *tester) {
+    // Test configuring with an unconfigured KMS provider.
+    {
+        mongocrypt_t *crypt = mongocrypt_new();
+        mongocrypt_binary_t *kms_providers = TEST_BSON(BSON_STR({"local:2" : {"key" : "%s"}}), LOCAL_KEK2_BASE64);
+        ASSERT_OK(mongocrypt_setopt_kms_providers(crypt, kms_providers), crypt);
+        ASSERT_OK(mongocrypt_init(crypt), crypt);
+
+        // Create with named KMS provider.
+        mongocrypt_ctx_t *ctx = mongocrypt_ctx_new(crypt);
+        ASSERT_OK(
+            mongocrypt_ctx_setopt_key_encryption_key(ctx, TEST_BSON(BSON_STR({"provider" : "local:not_configured"}))),
+            ctx);
+        ASSERT_FAILS(mongocrypt_ctx_datakey_init(ctx),
+                     ctx,
+                     "requested named kms provider 'local:not_configured' is not configured");
+
+        mongocrypt_ctx_destroy(ctx);
+        mongocrypt_destroy(crypt);
+    }
+
+    // Test successfully creating a local DEK with a named KMS provider.
+    {
+        mongocrypt_t *crypt = mongocrypt_new();
+        mongocrypt_binary_t *kms_providers = TEST_BSON(BSON_STR({"local:2" : {"key" : "%s"}}), LOCAL_KEK2_BASE64);
+        ASSERT_OK(mongocrypt_setopt_kms_providers(crypt, kms_providers), crypt);
+        ASSERT_OK(mongocrypt_init(crypt), crypt);
+
+        // Create with named KMS provider.
+        mongocrypt_ctx_t *ctx = mongocrypt_ctx_new(crypt);
+        ASSERT_OK(mongocrypt_ctx_setopt_key_encryption_key(ctx, TEST_BSON(BSON_STR({"provider" : "local:2"}))), ctx);
+        ASSERT_OK(mongocrypt_ctx_datakey_init(ctx), ctx);
+
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_READY);
+        mongocrypt_binary_t *out = mongocrypt_binary_new();
+        ASSERT_OK(mongocrypt_ctx_finalize(ctx, out), ctx);
+        // Check that `out` contains name.
+        bson_t out_bson;
+        ASSERT(_mongocrypt_binary_to_bson(out, &out_bson));
+        char *pattern = BSON_STR({"masterKey" : {"provider" : "local:2"}});
+        _assert_match_bson(&out_bson, TMP_BSON(pattern));
+        bson_destroy(&out_bson);
+        mongocrypt_binary_destroy(out);
+        mongocrypt_ctx_destroy(ctx);
+        mongocrypt_destroy(crypt);
+    }
+}
+
 static void test_mongocrypt_kek_parse_with_named_kms_provider(_mongocrypt_tester_t *tester) {
     // Create an unused `mongocrypt_t` to initialize library with `_mongocrypt_do_init`. Otherwise, parsing base64 may
     // fail.
@@ -294,4 +344,5 @@ void _mongocrypt_tester_install_named_kms_providers(_mongocrypt_tester_t *tester
     INSTALL_TEST(test_mc_named_kms_provider_map);
     INSTALL_TEST(test_mc_named_kms_provider_parse);
     INSTALL_TEST(test_mongocrypt_kek_parse_with_named_kms_provider);
+    INSTALL_TEST(test_create_datakey_with_named_kms_provider);
 }

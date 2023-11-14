@@ -756,8 +756,15 @@ bool _mongocrypt_ctx_init(mongocrypt_ctx_t *ctx, _mongocrypt_ctx_opts_spec_t *op
 
     /* Check that the kms provider required by the KEK is configured.  */
     if (ctx->opts.kek.kms_provider) {
-        if (!((ctx->crypt->opts.kms_providers.need_credentials | ctx->crypt->opts.kms_providers.configured_providers)
-              & (int)ctx->opts.kek.kms_provider)) {
+        if (ctx->opts.kek.is_named) {
+            if (!mc_named_kms_provider_map_has(ctx->crypt->opts.nkpm, ctx->opts.kek.key)) {
+                mongocrypt_status_t *status = ctx->status;
+                CLIENT_ERR("requested named kms provider '%s' is not configured", ctx->opts.kek.key);
+                return _mongocrypt_ctx_fail(ctx);
+            }
+        } else if (!((ctx->crypt->opts.kms_providers.need_credentials
+                      | ctx->crypt->opts.kms_providers.configured_providers)
+                     & (int)ctx->opts.kek.kms_provider)) {
             mongocrypt_status_t *status = ctx->status;
             CLIENT_ERR("requested kms provider '%s' is not configured", ctx->opts.kek.key);
             return _mongocrypt_ctx_fail(ctx);
