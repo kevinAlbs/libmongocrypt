@@ -748,21 +748,19 @@ bool _mongocrypt_ctx_init(mongocrypt_ctx_t *ctx, _mongocrypt_ctx_opts_spec_t *op
         if (!ctx->opts.kek.kms_provider) {
             return _mongocrypt_ctx_fail_w_msg(ctx, "master key required");
         }
-        if (!ctx->crypt->opts.use_need_kms_credentials_state
-            && !((int)ctx->opts.kek.kms_provider & _mongocrypt_ctx_kms_providers(ctx)->configured_providers)) {
-            return _mongocrypt_ctx_fail_w_msg(ctx, "requested kms provider not configured");
-        }
     }
 
     if (opts_spec->kek == OPT_PROHIBITED && ctx->opts.kek.kms_provider) {
         return _mongocrypt_ctx_fail_w_msg(ctx, "master key prohibited");
     }
 
-    /* Check that the kms provider required by the datakey is configured.  */
+    /* Check that the kms provider required by the KEK is configured.  */
     if (ctx->opts.kek.kms_provider) {
         if (!((ctx->crypt->opts.kms_providers.need_credentials | ctx->crypt->opts.kms_providers.configured_providers)
               & (int)ctx->opts.kek.kms_provider)) {
-            return _mongocrypt_ctx_fail_w_msg(ctx, "kms provider required by datakey is not configured");
+            mongocrypt_status_t *status = ctx->status;
+            CLIENT_ERR("requested kms provider '%s' is not configured", ctx->opts.kek.key);
+            return _mongocrypt_ctx_fail(ctx);
         }
     }
 

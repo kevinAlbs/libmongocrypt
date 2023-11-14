@@ -1068,7 +1068,7 @@ static void _test_createdatakey_with_wrong_kms_provider_helper(_mongocrypt_teste
     ASSERT_OK(mongocrypt_init(crypt), crypt);
     ctx = mongocrypt_ctx_new(crypt);
     ASSERT_OK(mongocrypt_ctx_setopt_key_encryption_key(ctx, TEST_BSON(kek)), ctx);
-    ASSERT_FAILS(mongocrypt_ctx_datakey_init(ctx), ctx, "kms provider required by datakey is not configured");
+    ASSERT_FAILS(mongocrypt_ctx_datakey_init(ctx), ctx, "requested kms provider 'azure' is not configured");
 
     mongocrypt_ctx_destroy(ctx);
     mongocrypt_destroy(crypt);
