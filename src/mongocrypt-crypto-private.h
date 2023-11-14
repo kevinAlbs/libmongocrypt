@@ -121,8 +121,8 @@ int _mongocrypt_memequal(const void *const b1, const void *const b2, size_t len)
  * Returns false and sets @status if an error occurred.
  */
 bool _mongocrypt_wrap_key(_mongocrypt_crypto_t *crypto,
-                          _mongocrypt_buffer_t *kek,
-                          _mongocrypt_buffer_t *dek,
+                          const _mongocrypt_buffer_t *kek,
+                          const _mongocrypt_buffer_t *dek,
                           _mongocrypt_buffer_t *encrypted_dek,
                           mongocrypt_status_t *status) MONGOCRYPT_WARN_UNUSED_RESULT;
 
@@ -137,8 +137,8 @@ bool _mongocrypt_wrap_key(_mongocrypt_crypto_t *crypto,
  * Returns false and sets @status if an error occurred.
  */
 bool _mongocrypt_unwrap_key(_mongocrypt_crypto_t *crypto,
-                            _mongocrypt_buffer_t *kek,
-                            _mongocrypt_buffer_t *encrypted_dek,
+                            const _mongocrypt_buffer_t *kek,
+                            const _mongocrypt_buffer_t *encrypted_dek,
                             _mongocrypt_buffer_t *dek,
                             mongocrypt_status_t *status) MONGOCRYPT_WARN_UNUSED_RESULT;
 

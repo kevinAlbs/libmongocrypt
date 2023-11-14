@@ -1283,8 +1283,8 @@ done:
 }
 
 bool _mongocrypt_wrap_key(_mongocrypt_crypto_t *crypto,
-                          _mongocrypt_buffer_t *kek,
-                          _mongocrypt_buffer_t *dek,
+                          const _mongocrypt_buffer_t *kek,
+                          const _mongocrypt_buffer_t *dek,
                           _mongocrypt_buffer_t *encrypted_dek,
                           mongocrypt_status_t *status) {
     const _mongocrypt_value_encryption_algorithm_t *fle1alg = _mcFLE1Algorithm();
@@ -1326,8 +1326,8 @@ done:
 }
 
 bool _mongocrypt_unwrap_key(_mongocrypt_crypto_t *crypto,
-                            _mongocrypt_buffer_t *kek,
-                            _mongocrypt_buffer_t *encrypted_dek,
+                            const _mongocrypt_buffer_t *kek,
+                            const _mongocrypt_buffer_t *encrypted_dek,
                             _mongocrypt_buffer_t *dek,
                             mongocrypt_status_t *status) {
     const _mongocrypt_value_encryption_algorithm_t *fle1alg = _mcFLE1Algorithm();
