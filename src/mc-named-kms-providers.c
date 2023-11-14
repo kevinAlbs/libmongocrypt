@@ -43,8 +43,9 @@ bool mc_named_provider_parse_key(const char *key, char **prefix_out, char **name
             CLIENT_ERR("invalid KMS provider `%s`: extra colon. " KEY_HELP, key);
             return false;
         }
-
-        *prefix_out = bson_strndup(key, prefix_end - key);
+        ptrdiff_t nchars = prefix_end - key;
+        BSON_ASSERT(nchars >= 0 && (uint64_t)nchars < SIZE_T_MAX);
+        *prefix_out = bson_strndup(key, (size_t)nchars);
         if (0 == strlen(*prefix_out)) {
             CLIENT_ERR("invalid KMS provider `%s`: empty prefix. " KEY_HELP, key);
             return false;
