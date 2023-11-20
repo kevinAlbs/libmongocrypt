@@ -481,7 +481,15 @@ bool _mongocrypt_key_broker_add_doc(_mongocrypt_key_broker_t *kb,
 
     /* Check that the returned key doc's provider matches. */
     kek_provider = key_doc->kek.kms_provider;
-    if (0 == ((int)kek_provider & kms_providers->configured_providers)) {
+    if (key_doc->kek.is_named) {
+        // Check for named KMS provider.
+        if (!mc_named_kms_provider_map_has(kb->crypt->opts.nkpm, key_doc->kek.key)) {
+            mongocrypt_status_t *status = kb->status;
+            CLIENT_ERR("client not configured with KMS provider necessary to decrypt: %s", key_doc->kek.key);
+            _key_broker_fail(kb);
+            goto done;
+        }
+    } else if (0 == ((int)kek_provider & kms_providers->configured_providers)) {
         mongocrypt_status_t *status = kb->status;
         CLIENT_ERR("client not configured with KMS provider necessary to decrypt: %s", key_doc->kek.key);
         _key_broker_fail(kb);
@@ -492,8 +500,19 @@ bool _mongocrypt_key_broker_add_doc(_mongocrypt_key_broker_t *kb,
      * HTTP KMS request. */
     BSON_ASSERT(kb->crypt);
     if (kek_provider == MONGOCRYPT_KMS_PROVIDER_LOCAL) {
+        const _mongocrypt_buffer_t *local_kek;
+        if (key_doc->kek.is_named) {
+            const mc_named_kms_provider_t *nkp = mc_named_kms_provider_map_get(kb->crypt->opts.nkpm, key_doc->kek.key);
+            // Expect non-NULL return. `mc_named_kms_provider_map_has` was previously called.
+            BSON_ASSERT(nkp);
+            BSON_ASSERT(nkp->type == MONGOCRYPT_KMS_PROVIDER_LOCAL);
+            local_kek = &nkp->value.local.key;
+        } else if (0 == ((int)kek_provider & kms_providers->configured_providers)) {
+            local_kek = &kms_providers->local.key;
+        }
+
         if (!_mongocrypt_unwrap_key(kb->crypt->crypto,
-                                    &kms_providers->local.key,
+                                    local_kek,
                                     &key_returned->doc->key_material,
                                     &key_returned->decrypted_key_material,
                                     kb->status)) {
