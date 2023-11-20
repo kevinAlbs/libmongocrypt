@@ -247,6 +247,21 @@ static void test_configuring_named_kms_providers(_mongocrypt_tester_t *tester) {
         ASSERT_FAILS(ok, crypt, "unsupported character `?`");
         mongocrypt_destroy(crypt);
     }
+
+    // Test configuring a named KMS provider with an empty document is prohibited.
+    {
+        mongocrypt_t *crypt = mongocrypt_new();
+        mongocrypt_binary_t *kms_providers = TEST_BSON(BSON_STR({"local:2" : {}}));
+        bool ok = mongocrypt_setopt_kms_providers(crypt, kms_providers);
+        ASSERT_FAILS(ok, crypt, "expected UTF-8 or binary key");
+        mongocrypt_destroy(crypt);
+
+        // An empty document is allowed for a non-named KMS provider to configure on-demand credentials.
+        crypt = mongocrypt_new();
+        kms_providers = TEST_BSON(BSON_STR({"local" : {}}));
+        ASSERT_OK(mongocrypt_setopt_kms_providers(crypt, kms_providers), crypt);
+        mongocrypt_destroy(crypt);
+    }
 }
 
 static void test_mc_named_kms_provider_map(_mongocrypt_tester_t *tester) {
