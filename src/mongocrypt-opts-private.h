@@ -83,7 +83,7 @@ typedef struct {
 // `name_out` to copies that must be freed. On failure, `prefix_out` and `name_out` are set to NULL.
 bool mc_named_provider_parse_key(const char *key, char **prefix_out, char **name_out, mongocrypt_status_t *status);
 
-// `_mongocrypt_named_kms_provider_from_bson` returns NULL on error and sets an error status.
+// `mc_named_kms_provider_from_bson` returns NULL on error and sets an error status.
 mc_named_kms_provider_t *mc_named_kms_provider_new(const char *name, const bson_t *def, mongocrypt_status_t *status);
 mc_named_kms_provider_t *mc_named_kms_provider_copy(const mc_named_kms_provider_t *nkp);
 void mc_named_kms_provider_destroy(mc_named_kms_provider_t *nkp);
@@ -93,9 +93,9 @@ typedef struct _mc_named_kms_provider_map_t mc_named_kms_provider_map_t;
 mc_named_kms_provider_map_t *mc_named_kms_provider_map_new(void);
 void mc_named_kms_provider_map_destroy(mc_named_kms_provider_map_t *nkpm);
 bool mc_named_kms_provider_map_has(mc_named_kms_provider_map_t *nkpm, const char *key);
-// `mongocrypt_named_kms_provider_map_get` returns NULL if `name` is not in the map.
+// `mc_named_kms_provider_map_get` returns NULL if `name` is not in the map.
 const mc_named_kms_provider_t *mc_named_kms_provider_map_get(mc_named_kms_provider_map_t *nkpm, const char *key);
-// `mongocrypt_named_kms_provider_map_put` overwrites an entry if `nkp->name` is present in the map.
+// `mc_named_kms_provider_map_put` overwrites an entry if `nkp->name` is present in the map.
 void mc_named_kms_provider_map_put(mc_named_kms_provider_map_t *nkpm, const mc_named_kms_provider_t *nkp);
 bool mc_named_kms_provider_map_is_empty(const mc_named_kms_provider_map_t *nkpm);
 

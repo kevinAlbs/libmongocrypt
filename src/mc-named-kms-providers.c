@@ -21,8 +21,6 @@
 
 #define KEY_HELP "Must be of form `<provider type>:<name>`. Example: `local:name`."
 
-// `mc_named_provider_parse_key` tries to parse `key` as the form `<prefix>:<name`> and sets `prefix_out` and
-// `name_out` to copies that must be freed. On failure, `prefix_out` and `name_out` are set to NULL.
 bool mc_named_provider_parse_key(const char *key, char **prefix_out, char **name_out, mongocrypt_status_t *status) {
     BSON_ASSERT_PARAM(key);
     BSON_ASSERT_PARAM(prefix_out);
@@ -82,7 +80,6 @@ bool mc_named_provider_parse_key(const char *key, char **prefix_out, char **name
     return true;
 }
 
-// `_mongocrypt_named_kms_provider_from_bson` returns NULL on error and sets an error status.
 mc_named_kms_provider_t *mc_named_kms_provider_new(const char *key, const bson_t *def, mongocrypt_status_t *status) {
     BSON_ASSERT_PARAM(key);
     BSON_ASSERT_PARAM(def);
@@ -357,7 +354,6 @@ bool mc_named_kms_provider_map_has(mc_named_kms_provider_map_t *nkpm, const char
     return false;
 }
 
-// `mongocrypt_named_kms_provider_map_get` returns NULL if `key` is not in the map.
 const mc_named_kms_provider_t *mc_named_kms_provider_map_get(mc_named_kms_provider_map_t *nkpm, const char *key) {
     BSON_ASSERT_PARAM(nkpm);
     BSON_ASSERT_PARAM(key);
@@ -370,7 +366,6 @@ const mc_named_kms_provider_t *mc_named_kms_provider_map_get(mc_named_kms_provid
     return NULL;
 }
 
-// `mongocrypt_named_kms_provider_map_put` requires the KMS provider name must not be present in the map.
 void mc_named_kms_provider_map_put(mc_named_kms_provider_map_t *nkpm, const mc_named_kms_provider_t *new_nkp) {
     BSON_ASSERT_PARAM(nkpm);
     BSON_ASSERT_PARAM(new_nkp);
