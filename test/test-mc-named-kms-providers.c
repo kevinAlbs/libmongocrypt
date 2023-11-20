@@ -157,6 +157,16 @@ static void test_configuring_named_kms_providers(_mongocrypt_tester_t *tester) {
         ASSERT_OK(mongocrypt_init(crypt), crypt);
         mongocrypt_destroy(crypt);
     }
+
+    // Test character validation. Only valid characters are: [a-zA-Z0-9_]
+    {
+        mongocrypt_t *crypt = mongocrypt_new();
+        mongocrypt_binary_t *kms_providers =
+            TEST_BSON(BSON_STR({"local:name_with_invalid_character_?" : {"key" : "%s"}}), LOCAL_KEK1_BASE64);
+        bool ok = mongocrypt_setopt_kms_providers(crypt, kms_providers);
+        ASSERT_FAILS(ok, crypt, "unsupported character `?`");
+        mongocrypt_destroy(crypt);
+    }
 }
 
 static void test_mc_named_kms_provider_map(_mongocrypt_tester_t *tester) {

@@ -56,6 +56,28 @@ bool mc_named_provider_parse_key(const char *key, char **prefix_out, char **name
             CLIENT_ERR("invalid KMS provider `%s`: empty name. " KEY_HELP, key);
             return false;
         }
+
+        // Validate name only contains: [a-zA-Z0-9_]
+        for (char *cp = *name_out; *cp != '\0'; cp++) {
+            char c = *cp;
+            if (c >= 'a' && c <= 'z') {
+                continue;
+            }
+            if (c >= 'A' && c <= 'Z') {
+                continue;
+            }
+            if (c >= '0' && c <= '9') {
+                continue;
+            }
+            if (c == '_') {
+                continue;
+            }
+            CLIENT_ERR("invalid KMS provider `%s`: unsupported character `%c`. Must be of the form `<provider "
+                       "type>:<name>` where `<name>` only contain characters [a-zA-Z0-9_]",
+                       key,
+                       c);
+            return false;
+        }
     }
     return true;
 }
