@@ -507,7 +507,7 @@ bool _mongocrypt_key_broker_add_doc(_mongocrypt_key_broker_t *kb,
             BSON_ASSERT(nkp);
             BSON_ASSERT(nkp->type == MONGOCRYPT_KMS_PROVIDER_LOCAL);
             local_kek = &nkp->value.local.key;
-        } else if (0 == ((int)kek_provider & kms_providers->configured_providers)) {
+        } else {
             local_kek = &kms_providers->local.key;
         }
 
