@@ -30,7 +30,8 @@
 
 #define BSON_STR(...) #__VA_ARGS__
 
-static void test_explicit_with_named_kms_provider(_mongocrypt_tester_t *tester) {
+
+static void test_explicit_with_named_kms_provider_for_local(_mongocrypt_tester_t *tester) {
     mongocrypt_t *crypt = mongocrypt_new();
     mongocrypt_binary_t *kms_providers = TEST_BSON(BSON_STR({"local:2" : {"key" : "%s"}}), LOCAL_KEK2_BASE64);
 
@@ -110,7 +111,7 @@ static void test_explicit_with_named_kms_provider(_mongocrypt_tester_t *tester) 
     mongocrypt_destroy(crypt);
 }
 
-static void test_create_datakey_with_named_kms_provider(_mongocrypt_tester_t *tester) {
+static void test_create_datakey_with_named_kms_provider_for_local(_mongocrypt_tester_t *tester) {
     // Test configuring with an unconfigured KMS provider.
     {
         mongocrypt_t *crypt = mongocrypt_new();
@@ -449,6 +450,6 @@ void _mongocrypt_tester_install_named_kms_providers(_mongocrypt_tester_t *tester
     INSTALL_TEST(test_mc_named_kms_provider_map);
     INSTALL_TEST(test_mc_named_kms_provider_parse);
     INSTALL_TEST(test_mongocrypt_kek_parse_with_named_kms_provider);
-    INSTALL_TEST(test_create_datakey_with_named_kms_provider);
-    INSTALL_TEST(test_explicit_with_named_kms_provider);
+    INSTALL_TEST(test_create_datakey_with_named_kms_provider_for_local);
+    INSTALL_TEST(test_explicit_with_named_kms_provider_for_local);
 }
