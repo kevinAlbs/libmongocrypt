@@ -30,6 +30,53 @@
 
 #define BSON_STR(...) #__VA_ARGS__
 
+static void test_rewrap_with_named_kms_provider_for_local(_mongocrypt_tester_t *tester) {
+    mongocrypt_t *crypt = mongocrypt_new();
+    mongocrypt_binary_t *kms_providers = TEST_BSON(BSON_STR({"local" : {"key" : "%s"}, "local:2" : {"key" : "%s"}}),
+                                                   LOCAL_KEK1_BASE64,
+                                                   LOCAL_KEK2_BASE64);
+
+    ASSERT_OK(mongocrypt_setopt_kms_providers(crypt, kms_providers), crypt);
+    ASSERT_OK(mongocrypt_init(crypt), crypt);
+
+    // Create DEK.
+    _mongocrypt_buffer_t dek;
+    {
+        mongocrypt_ctx_t *ctx = mongocrypt_ctx_new(crypt);
+        ASSERT_OK(mongocrypt_ctx_setopt_key_encryption_key(ctx, TEST_BSON(BSON_STR({"provider" : "local"}))), ctx);
+        ASSERT_OK(mongocrypt_ctx_datakey_init(ctx), ctx);
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_READY);
+        mongocrypt_binary_t *bin = mongocrypt_binary_new();
+        ASSERT_OK(mongocrypt_ctx_finalize(ctx, bin), ctx);
+        _mongocrypt_buffer_copy_from_binary(&dek, bin);
+        bson_t dek_bson;
+        ASSERT(_mongocrypt_buffer_to_bson(&dek, &dek_bson));
+        _assert_match_bson(&dek_bson, TMP_BSON(BSON_STR({"masterKey" : {"provider" : "local"}})));
+        mongocrypt_binary_destroy(bin);
+        mongocrypt_ctx_destroy(ctx);
+    }
+
+    // Test rewrapping from unnamed KMS to named KMS.
+    {
+        mongocrypt_ctx_t *ctx = mongocrypt_ctx_new(crypt);
+        ASSERT_OK(mongocrypt_ctx_setopt_key_encryption_key(ctx, TEST_BSON(BSON_STR({"provider" : "local:2"}))), ctx);
+        ASSERT_OK(mongocrypt_ctx_rewrap_many_datakey_init(ctx, TEST_BSON("{}")), ctx);
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_KEYS);
+        ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, _mongocrypt_buffer_as_binary(&dek)), ctx);
+        ASSERT_OK(mongocrypt_ctx_mongo_done(ctx), ctx);
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_READY);
+        mongocrypt_binary_t *bin = mongocrypt_binary_new();
+        ASSERT_OK(mongocrypt_ctx_finalize(ctx, bin), ctx);
+        _mongocrypt_buffer_t dek_rewrapped;
+        _mongocrypt_buffer_copy_from_binary(&dek_rewrapped, bin);
+        _mongocrypt_buffer_cleanup(&dek_rewrapped);
+        mongocrypt_binary_destroy(bin);
+        mongocrypt_ctx_destroy(ctx);
+    }
+
+    _mongocrypt_buffer_cleanup(&dek);
+    mongocrypt_destroy(crypt);
+}
 
 static void test_explicit_with_named_kms_provider_for_local(_mongocrypt_tester_t *tester) {
     mongocrypt_t *crypt = mongocrypt_new();
@@ -452,4 +499,5 @@ void _mongocrypt_tester_install_named_kms_providers(_mongocrypt_tester_t *tester
     INSTALL_TEST(test_mongocrypt_kek_parse_with_named_kms_provider);
     INSTALL_TEST(test_create_datakey_with_named_kms_provider_for_local);
     INSTALL_TEST(test_explicit_with_named_kms_provider_for_local);
+    INSTALL_TEST(test_rewrap_with_named_kms_provider_for_local);
 }
