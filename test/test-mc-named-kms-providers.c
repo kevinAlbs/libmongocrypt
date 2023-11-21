@@ -158,7 +158,7 @@ static void test_explicit_with_named_kms_provider_for_local(_mongocrypt_tester_t
     mongocrypt_destroy(crypt);
 }
 
-static void test_create_datakey_with_named_kms_provider_for_local(_mongocrypt_tester_t *tester) {
+static void test_create_datakey_with_named_kms_provider(_mongocrypt_tester_t *tester) {
     // Test configuring with an unconfigured KMS provider.
     {
         mongocrypt_t *crypt = mongocrypt_new();
@@ -198,6 +198,72 @@ static void test_create_datakey_with_named_kms_provider_for_local(_mongocrypt_te
         bson_t out_bson;
         ASSERT(_mongocrypt_binary_to_bson(out, &out_bson));
         char *pattern = BSON_STR({"masterKey" : {"provider" : "local:2"}});
+        _assert_match_bson(&out_bson, TMP_BSON(pattern));
+        bson_destroy(&out_bson);
+        mongocrypt_binary_destroy(out);
+        mongocrypt_ctx_destroy(ctx);
+        mongocrypt_destroy(crypt);
+    }
+
+    // Test successfully creating an Azure DEK with a named KMS provider
+    {
+        mongocrypt_t *crypt = mongocrypt_new();
+        mongocrypt_binary_t *kms_providers = TEST_BSON(BSON_STR({
+            "azure:2" : {
+                "tenantId" : "placeholder-tenantId",
+                "clientId" : "placeholder-clientId",
+                "clientSecret" : "placeholder-clientSecret",
+                "identityPlatformEndpoint" : "placeholder-identityPlatformEndpoint.com"
+            }
+        }));
+        ASSERT_OK(mongocrypt_setopt_kms_providers(crypt, kms_providers), crypt);
+        ASSERT_OK(mongocrypt_init(crypt), crypt);
+
+        // Create with named KMS provider.
+        mongocrypt_ctx_t *ctx = mongocrypt_ctx_new(crypt);
+        ASSERT_OK(mongocrypt_ctx_setopt_key_encryption_key(ctx, TEST_BSON(BSON_STR({
+                                                               "provider" : "azure:2",
+                                                               "keyName" : "placeholder-keyName",
+                                                               "keyVaultEndpoint" : "placeholder-keyVaultEndpoint.com"
+                                                           }))),
+                  ctx);
+        ASSERT_OK(mongocrypt_ctx_datakey_init(ctx), ctx);
+
+        // Needs KMS for oauth token.
+        {
+            ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_KMS);
+            mongocrypt_kms_ctx_t *kctx = mongocrypt_ctx_next_kms_ctx(ctx);
+            ASSERT(kctx);
+            const char *endpoint;
+            ASSERT_OK(mongocrypt_kms_ctx_endpoint(kctx, &endpoint), kctx);
+            ASSERT_STREQUAL(endpoint, "placeholder-identityPlatformEndpoint.com");
+            ASSERT_OK(mongocrypt_kms_ctx_feed(kctx, TEST_FILE("./test/data/azure-auth/oauth-response.txt")), kctx);
+            kctx = mongocrypt_ctx_next_kms_ctx(ctx);
+            ASSERT(!kctx);
+            ASSERT_OK(mongocrypt_ctx_kms_done(ctx), ctx);
+        }
+
+        // Needs KMS to encrypt DEK.
+        {
+            ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_KMS);
+            mongocrypt_kms_ctx_t *kctx = mongocrypt_ctx_next_kms_ctx(ctx);
+            ASSERT(kctx);
+            const char *endpoint;
+            ASSERT_OK(mongocrypt_kms_ctx_endpoint(kctx, &endpoint), kctx);
+            ASSERT_STREQUAL(endpoint, "placeholder-keyVaultEndpoint.com");
+            ASSERT_OK(mongocrypt_kms_ctx_feed(kctx, TEST_FILE("./test/data/azure-auth/encrypt-response.txt")), kctx);
+            kctx = mongocrypt_ctx_next_kms_ctx(ctx);
+            ASSERT(!kctx);
+            ASSERT_OK(mongocrypt_ctx_kms_done(ctx), ctx);
+        }
+
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_READY);
+        mongocrypt_binary_t *out = mongocrypt_binary_new();
+        ASSERT_OK(mongocrypt_ctx_finalize(ctx, out), ctx);
+        // Check that `out` contains name.
+        bson_t out_bson;
+        ASSERT(_mongocrypt_binary_to_bson(out, &out_bson));
+        char *pattern = BSON_STR({"masterKey" : {"provider" : "azure:2"}});
         _assert_match_bson(&out_bson, TMP_BSON(pattern));
         bson_destroy(&out_bson);
         mongocrypt_binary_destroy(out);
@@ -497,7 +563,7 @@ void _mongocrypt_tester_install_named_kms_providers(_mongocrypt_tester_t *tester
     INSTALL_TEST(test_mc_named_kms_provider_map);
     INSTALL_TEST(test_mc_named_kms_provider_parse);
     INSTALL_TEST(test_mongocrypt_kek_parse_with_named_kms_provider);
-    INSTALL_TEST(test_create_datakey_with_named_kms_provider_for_local);
+    INSTALL_TEST(test_create_datakey_with_named_kms_provider);
     INSTALL_TEST(test_explicit_with_named_kms_provider_for_local);
     INSTALL_TEST(test_rewrap_with_named_kms_provider_for_local);
 }
