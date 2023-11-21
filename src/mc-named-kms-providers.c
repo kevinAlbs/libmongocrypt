@@ -21,8 +21,11 @@
 
 #define KEY_HELP "Must be of form `<provider type>:<name>`. Example: `local:name`."
 
-bool mc_named_provider_parse_key(const char *key, char **prefix_out, char **name_out, mongocrypt_status_t *status) {
-    BSON_ASSERT_PARAM(key);
+bool mc_named_provider_parse_kms_id(const char *kms_id,
+                                    char **prefix_out,
+                                    char **name_out,
+                                    mongocrypt_status_t *status) {
+    BSON_ASSERT_PARAM(kms_id);
     BSON_ASSERT_PARAM(prefix_out);
     BSON_ASSERT_PARAM(name_out);
     BSON_ASSERT(status || true); // Optional.
@@ -31,27 +34,27 @@ bool mc_named_provider_parse_key(const char *key, char **prefix_out, char **name
     *name_out = NULL;
     // Parse `key` into `prefix` and `name`.
     {
-        const char *prefix_end = strstr(key, ":");
+        const char *prefix_end = strstr(kms_id, ":");
         if (prefix_end == NULL) {
-            CLIENT_ERR("invalid KMS provider `%s`: missing colon. " KEY_HELP, key);
+            CLIENT_ERR("invalid KMS provider `%s`: missing colon. " KEY_HELP, kms_id);
             return false;
         }
         const char *next_colon = strstr(prefix_end + 1, ":");
         if (next_colon != NULL) {
-            CLIENT_ERR("invalid KMS provider `%s`: extra colon. " KEY_HELP, key);
+            CLIENT_ERR("invalid KMS provider `%s`: extra colon. " KEY_HELP, kms_id);
             return false;
         }
-        ptrdiff_t nchars = prefix_end - key;
+        ptrdiff_t nchars = prefix_end - kms_id;
         BSON_ASSERT(nchars >= 0 && (uint64_t)nchars < SIZE_T_MAX);
-        *prefix_out = bson_strndup(key, (size_t)nchars);
+        *prefix_out = bson_strndup(kms_id, (size_t)nchars);
         if (0 == strlen(*prefix_out)) {
-            CLIENT_ERR("invalid KMS provider `%s`: empty prefix. " KEY_HELP, key);
+            CLIENT_ERR("invalid KMS provider `%s`: empty prefix. " KEY_HELP, kms_id);
             return false;
         }
 
         *name_out = bson_strdup(prefix_end + 1);
         if (0 == strlen(*name_out)) {
-            CLIENT_ERR("invalid KMS provider `%s`: empty name. " KEY_HELP, key);
+            CLIENT_ERR("invalid KMS provider `%s`: empty name. " KEY_HELP, kms_id);
             return false;
         }
 
@@ -72,7 +75,7 @@ bool mc_named_provider_parse_key(const char *key, char **prefix_out, char **name
             }
             CLIENT_ERR("invalid KMS provider `%s`: unsupported character `%c`. Must be of the form `<provider "
                        "type>:<name>` where `<name>` only contain characters [a-zA-Z0-9_]",
-                       key,
+                       kms_id,
                        c);
             return false;
         }
@@ -80,8 +83,8 @@ bool mc_named_provider_parse_key(const char *key, char **prefix_out, char **name
     return true;
 }
 
-mc_named_kms_provider_t *mc_named_kms_provider_new(const char *key, const bson_t *def, mongocrypt_status_t *status) {
-    BSON_ASSERT_PARAM(key);
+mc_named_kms_provider_t *mc_named_kms_provider_new(const char *kms_id, const bson_t *def, mongocrypt_status_t *status) {
+    BSON_ASSERT_PARAM(kms_id);
     BSON_ASSERT_PARAM(def);
     BSON_ASSERT(status || true); // Optional.
 
@@ -90,9 +93,9 @@ mc_named_kms_provider_t *mc_named_kms_provider_new(const char *key, const bson_t
     mc_named_kms_provider_t *nkp = bson_malloc0(sizeof(mc_named_kms_provider_t));
     bool ok = false;
 
-    nkp->key = bson_strdup(key);
+    nkp->kms_id = bson_strdup(kms_id);
 
-    if (!mc_named_provider_parse_key(key, &prefix, &name, status)) {
+    if (!mc_named_provider_parse_kms_id(kms_id, &prefix, &name, status)) {
         goto fail;
     }
 
@@ -228,7 +231,7 @@ mc_named_kms_provider_t *mc_named_kms_provider_new(const char *key, const bson_t
             goto fail;
         }
     } else {
-        CLIENT_ERR("invalid KMS provider `%s`: unknown prefix `%s`. " KEY_HELP, key, prefix);
+        CLIENT_ERR("invalid KMS provider `%s`: unknown prefix `%s`. " KEY_HELP, kms_id, prefix);
         goto fail;
     }
 
@@ -252,7 +255,7 @@ mc_named_kms_provider_t *mc_named_kms_provider_copy(const mc_named_kms_provider_
     mc_named_kms_provider_t *nkp_copy = bson_malloc0(sizeof(mc_named_kms_provider_t));
 
     nkp_copy->type = nkp->type;
-    nkp_copy->key = bson_strdup(nkp->key);
+    nkp_copy->kms_id = bson_strdup(nkp->kms_id);
 
     switch (nkp->type) {
     case MONGOCRYPT_KMS_PROVIDER_NONE: break;
@@ -314,7 +317,7 @@ void mc_named_kms_provider_destroy(mc_named_kms_provider_t *nkp) {
     case MONGOCRYPT_KMS_PROVIDER_LOCAL: _mongocrypt_buffer_cleanup(&nkp->value.local.key); break;
     }
 
-    bson_free(nkp->key);
+    bson_free(nkp->kms_id);
     bson_free(nkp);
 }
 
@@ -342,24 +345,24 @@ void mc_named_kms_provider_map_destroy(mc_named_kms_provider_map_t *nkpm) {
     bson_free(nkpm);
 }
 
-bool mc_named_kms_provider_map_has(mc_named_kms_provider_map_t *nkpm, const char *key) {
+bool mc_named_kms_provider_map_has(mc_named_kms_provider_map_t *nkpm, const char *kms_id) {
     BSON_ASSERT_PARAM(nkpm);
-    BSON_ASSERT_PARAM(key);
+    BSON_ASSERT_PARAM(kms_id);
     for (size_t i = 0; i < nkpm->entries.len; i++) {
         mc_named_kms_provider_t *nkp = _mc_array_index(&nkpm->entries, mc_named_kms_provider_t *, i);
-        if (0 == strcmp(nkp->key, key)) {
+        if (0 == strcmp(nkp->kms_id, kms_id)) {
             return true;
         }
     }
     return false;
 }
 
-const mc_named_kms_provider_t *mc_named_kms_provider_map_get(mc_named_kms_provider_map_t *nkpm, const char *key) {
+const mc_named_kms_provider_t *mc_named_kms_provider_map_get(mc_named_kms_provider_map_t *nkpm, const char *kms_id) {
     BSON_ASSERT_PARAM(nkpm);
-    BSON_ASSERT_PARAM(key);
+    BSON_ASSERT_PARAM(kms_id);
     for (size_t i = 0; i < nkpm->entries.len; i++) {
         mc_named_kms_provider_t *nkp = _mc_array_index(&nkpm->entries, mc_named_kms_provider_t *, i);
-        if (0 == strcmp(nkp->key, key)) {
+        if (0 == strcmp(nkp->kms_id, kms_id)) {
             return nkp;
         }
     }
@@ -374,7 +377,7 @@ void mc_named_kms_provider_map_put(mc_named_kms_provider_map_t *nkpm, const mc_n
     // Check if there is an existing entry.
     for (size_t i = 0; i < nkpm->entries.len; i++) {
         mc_named_kms_provider_t *nkp = _mc_array_index(&nkpm->entries, mc_named_kms_provider_t *, i);
-        if (0 == strcmp(nkp->key, new_nkp->key)) {
+        if (0 == strcmp(nkp->kms_id, new_nkp->kms_id)) {
             // Overwrite.
             mc_named_kms_provider_destroy(nkp);
             _mc_array_index(&nkpm->entries, mc_named_kms_provider_t *, i) = to_put;

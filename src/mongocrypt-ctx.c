@@ -712,7 +712,7 @@ bool mongocrypt_ctx_setopt_masterkey_local(mongocrypt_ctx_t *ctx) {
     }
 
     ctx->opts.kek.kms_provider = MONGOCRYPT_KMS_PROVIDER_LOCAL;
-    ctx->opts.kek.key = bson_strdup("local");
+    ctx->opts.kek.kms_id = bson_strdup("local");
     return true;
 }
 
@@ -758,16 +758,16 @@ bool _mongocrypt_ctx_init(mongocrypt_ctx_t *ctx, _mongocrypt_ctx_opts_spec_t *op
     /* Check that the kms provider required by the KEK is configured.  */
     if (ctx->opts.kek.kms_provider) {
         if (ctx->opts.kek.is_named) {
-            if (!mc_named_kms_provider_map_has(ctx->crypt->opts.nkpm, ctx->opts.kek.key)) {
+            if (!mc_named_kms_provider_map_has(ctx->crypt->opts.nkpm, ctx->opts.kek.kms_id)) {
                 mongocrypt_status_t *status = ctx->status;
-                CLIENT_ERR("requested named kms provider '%s' is not configured", ctx->opts.kek.key);
+                CLIENT_ERR("requested named kms provider '%s' is not configured", ctx->opts.kek.kms_id);
                 return _mongocrypt_ctx_fail(ctx);
             }
         } else if (!((ctx->crypt->opts.kms_providers.need_credentials
                       | ctx->crypt->opts.kms_providers.configured_providers)
                      & (int)ctx->opts.kek.kms_provider)) {
             mongocrypt_status_t *status = ctx->status;
-            CLIENT_ERR("requested kms provider '%s' is not configured", ctx->opts.kek.key);
+            CLIENT_ERR("requested kms provider '%s' is not configured", ctx->opts.kek.kms_id);
             return _mongocrypt_ctx_fail(ctx);
         }
     }

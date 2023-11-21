@@ -67,7 +67,7 @@ typedef struct {
 } _mongocrypt_opts_kms_providers_t;
 
 typedef struct {
-    char *key; // `key` stores "<prefix>:<name>". Example: "local:myname".
+    char *kms_id; // `key` stores "<prefix>:<name>". Example: "local:myname".
     _mongocrypt_kms_provider_t type;
 
     union {
@@ -79,9 +79,12 @@ typedef struct {
     } value;
 } mc_named_kms_provider_t;
 
-// `mc_named_provider_parse_key` tries to parse `key` as the form `<prefix>:<name>` and sets `prefix_out` and
+// `mc_named_provider_parse_kms_id` tries to parse `kms_id` as the form `<prefix>:<name>` and sets `prefix_out` and
 // `name_out` to copies that must be freed. On failure, `prefix_out` and `name_out` are set to NULL.
-bool mc_named_provider_parse_key(const char *key, char **prefix_out, char **name_out, mongocrypt_status_t *status);
+bool mc_named_provider_parse_kms_id(const char *kms_id,
+                                    char **prefix_out,
+                                    char **name_out,
+                                    mongocrypt_status_t *status);
 
 // `mc_named_kms_provider_from_bson` returns NULL on error and sets an error status.
 mc_named_kms_provider_t *mc_named_kms_provider_new(const char *name, const bson_t *def, mongocrypt_status_t *status);
@@ -92,9 +95,9 @@ typedef struct _mc_named_kms_provider_map_t mc_named_kms_provider_map_t;
 
 mc_named_kms_provider_map_t *mc_named_kms_provider_map_new(void);
 void mc_named_kms_provider_map_destroy(mc_named_kms_provider_map_t *nkpm);
-bool mc_named_kms_provider_map_has(mc_named_kms_provider_map_t *nkpm, const char *key);
+bool mc_named_kms_provider_map_has(mc_named_kms_provider_map_t *nkpm, const char *kms_id);
 // `mc_named_kms_provider_map_get` returns NULL if `name` is not in the map.
-const mc_named_kms_provider_t *mc_named_kms_provider_map_get(mc_named_kms_provider_map_t *nkpm, const char *key);
+const mc_named_kms_provider_t *mc_named_kms_provider_map_get(mc_named_kms_provider_map_t *nkpm, const char *kms_id);
 // `mc_named_kms_provider_map_put` overwrites an entry if `nkp->name` is present in the map.
 void mc_named_kms_provider_map_put(mc_named_kms_provider_map_t *nkpm, const mc_named_kms_provider_t *nkp);
 bool mc_named_kms_provider_map_is_empty(const mc_named_kms_provider_map_t *nkpm);

@@ -82,9 +82,9 @@ typedef struct {
     } provider;
 
     bool is_named;
-    // `key` is the value of the "provider" field in the KEK document.
+    // `kms_id` is the value of the "provider" field in the KEK document.
     // Expected values: "aws", "azure", "gcp", "kmip", "local", or a named KMS provider key `<prefix>:<name>`.
-    char *key;
+    char *kms_id;
 } _mongocrypt_kek_t;
 
 /* Parse a document describing a key encryption key.

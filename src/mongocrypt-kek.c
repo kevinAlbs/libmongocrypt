@@ -57,12 +57,12 @@ bool _mongocrypt_kek_parse_owned(const bson_t *bson, _mongocrypt_kek_t *kek, mon
     if (!_mongocrypt_parse_required_utf8(bson, "provider", &kms_provider, status)) {
         goto done;
     }
-    kek->key = bson_strdup(kms_provider);
+    kek->kms_id = bson_strdup(kms_provider);
 
     // If `kms_provider` contains a colon, try to parse as a named KMS provider.
     if (strstr(kms_provider, ":") != NULL) {
         // May be a named KMS provider of the form `<prefix>:<name>`.
-        if (!mc_named_provider_parse_key(kms_provider, &prefix, &name, status)) {
+        if (!mc_named_provider_parse_kms_id(kms_provider, &prefix, &name, status)) {
             goto done;
         }
         // Re-assign `kms_provider` to the parsed `prefix`.
@@ -195,7 +195,7 @@ bool _mongocrypt_kek_append(const _mongocrypt_kek_t *kek, bson_t *bson, mongocry
     BSON_ASSERT_PARAM(kek);
     BSON_ASSERT_PARAM(bson);
 
-    BSON_APPEND_UTF8(bson, "provider", kek->key);
+    BSON_APPEND_UTF8(bson, "provider", kek->kms_id);
     if (kek->kms_provider == MONGOCRYPT_KMS_PROVIDER_AWS) {
         BSON_APPEND_UTF8(bson, "region", kek->provider.aws.region);
         BSON_APPEND_UTF8(bson, "key", kek->provider.aws.cmk);
@@ -269,7 +269,7 @@ void _mongocrypt_kek_copy_to(const _mongocrypt_kek_t *src, _mongocrypt_kek_t *ds
                     || src->kms_provider == MONGOCRYPT_KMS_PROVIDER_LOCAL);
     }
     dst->kms_provider = src->kms_provider;
-    dst->key = bson_strdup(src->key);
+    dst->kms_id = bson_strdup(src->kms_id);
     dst->is_named = src->is_named;
 }
 
@@ -301,6 +301,6 @@ void _mongocrypt_kek_cleanup(_mongocrypt_kek_t *kek) {
                     || kek->kms_provider == MONGOCRYPT_KMS_PROVIDER_LOCAL);
     }
 
-    bson_free(kek->key);
+    bson_free(kek->kms_id);
     return;
 }

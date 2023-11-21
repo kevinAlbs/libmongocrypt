@@ -287,7 +287,7 @@ static void test_mongocrypt_kek_parse_with_named_kms_provider(_mongocrypt_tester
         _mongocrypt_kek_t kek = (_mongocrypt_kek_t){0};
         bool ok = _mongocrypt_kek_parse_owned(TMP_BSON(BSON_STR({"provider" : "local:2"})), &kek, status);
         ASSERT_OK_STATUS(ok, status);
-        ASSERT_STREQUAL(kek.key, "local:2");
+        ASSERT_STREQUAL(kek.kms_id, "local:2");
         ASSERT(kek.is_named);
         _mongocrypt_kek_cleanup(&kek);
     }
@@ -299,7 +299,7 @@ static void test_mongocrypt_kek_parse_with_named_kms_provider(_mongocrypt_tester
         bool ok = _mongocrypt_kek_parse_owned(TMP_BSON(BSON_STR({"provider" : "local:2"})), &kek, status);
         ASSERT_OK_STATUS(ok, status);
         _mongocrypt_kek_copy_to(&kek, &kek_copy);
-        ASSERT_STREQUAL(kek_copy.key, "local:2");
+        ASSERT_STREQUAL(kek_copy.kms_id, "local:2");
         ASSERT(kek_copy.is_named);
         _mongocrypt_kek_cleanup(&kek_copy);
         _mongocrypt_kek_cleanup(&kek);
@@ -419,7 +419,7 @@ static void test_mc_named_kms_provider_map(_mongocrypt_tester_t *tester) {
         ASSERT(mc_named_kms_provider_map_has(nkpm, "local:1"));
         const mc_named_kms_provider_t *got = mc_named_kms_provider_map_get(nkpm, "local:1");
         ASSERT(got);
-        ASSERT_STREQUAL(got->key, "local:1");
+        ASSERT_STREQUAL(got->kms_id, "local:1");
         ASSERT(got->type == MONGOCRYPT_KMS_PROVIDER_LOCAL);
         ASSERT_CMPBUF(kek1_buf, got->value.local.key);
         mc_named_kms_provider_map_destroy(nkpm);
@@ -435,7 +435,7 @@ static void test_mc_named_kms_provider_map(_mongocrypt_tester_t *tester) {
             ASSERT(mc_named_kms_provider_map_has(nkpm, "local:1"));
             const mc_named_kms_provider_t *got = mc_named_kms_provider_map_get(nkpm, "local:1");
             ASSERT(got);
-            ASSERT_STREQUAL(got->key, "local:1");
+            ASSERT_STREQUAL(got->kms_id, "local:1");
             ASSERT(got->type == MONGOCRYPT_KMS_PROVIDER_LOCAL);
             ASSERT_CMPBUF(kek1_buf, got->value.local.key);
         }
@@ -447,7 +447,7 @@ static void test_mc_named_kms_provider_map(_mongocrypt_tester_t *tester) {
             ASSERT(mc_named_kms_provider_map_has(nkpm, "local:2"));
             const mc_named_kms_provider_t *got = mc_named_kms_provider_map_get(nkpm, "local:2");
             ASSERT(got);
-            ASSERT_STREQUAL(got->key, "local:2");
+            ASSERT_STREQUAL(got->kms_id, "local:2");
             ASSERT(got->type == MONGOCRYPT_KMS_PROVIDER_LOCAL);
             ASSERT_CMPBUF(kek2_buf, got->value.local.key);
         }
@@ -464,7 +464,7 @@ static void test_mc_named_kms_provider_map(_mongocrypt_tester_t *tester) {
             ASSERT(mc_named_kms_provider_map_has(nkpm, "local:1"));
             const mc_named_kms_provider_t *got = mc_named_kms_provider_map_get(nkpm, "local:1");
             ASSERT(got);
-            ASSERT_STREQUAL(got->key, "local:1");
+            ASSERT_STREQUAL(got->kms_id, "local:1");
             ASSERT(got->type == MONGOCRYPT_KMS_PROVIDER_LOCAL);
             ASSERT_CMPBUF(kek1_buf, got->value.local.key);
         }
@@ -477,7 +477,7 @@ static void test_mc_named_kms_provider_map(_mongocrypt_tester_t *tester) {
             ASSERT(mc_named_kms_provider_map_has(nkpm, "local:1"));
             const mc_named_kms_provider_t *got = mc_named_kms_provider_map_get(nkpm, "local:1");
             ASSERT(got);
-            ASSERT_STREQUAL(got->key, "local:1");
+            ASSERT_STREQUAL(got->kms_id, "local:1");
             ASSERT(got->type == MONGOCRYPT_KMS_PROVIDER_LOCAL);
             ASSERT_CMPBUF(kek2_buf, got->value.local.key);
 

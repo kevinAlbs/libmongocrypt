@@ -189,9 +189,9 @@ static bool _kms_start(mongocrypt_ctx_t *ctx) {
         const _mongocrypt_buffer_t *kek;
         if (ctx->opts.kek.is_named) {
             // Assert KMS provider is configured. _mongocrypt_ctx_init verifies the KEK has a matching KMS provider.
-            BSON_ASSERT(mc_named_kms_provider_map_has(ctx->crypt->opts.nkpm, ctx->opts.kek.key));
+            BSON_ASSERT(mc_named_kms_provider_map_has(ctx->crypt->opts.nkpm, ctx->opts.kek.kms_id));
             const mc_named_kms_provider_t *nkp =
-                mc_named_kms_provider_map_get(ctx->crypt->opts.nkpm, ctx->opts.kek.key);
+                mc_named_kms_provider_map_get(ctx->crypt->opts.nkpm, ctx->opts.kek.kms_id);
             kek = &nkp->value.local.key;
         } else {
             // Assert KMS provider is configured. _mongocrypt_ctx_init verifies the KEK has a matching KMS provider.
