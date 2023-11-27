@@ -37,4 +37,17 @@ bool _mongocrypt_cache_oauth_add(_mongocrypt_cache_oauth_t *cache, bson_t *oauth
  * cached. */
 char *_mongocrypt_cache_oauth_get(_mongocrypt_cache_oauth_t *cache);
 
+typedef struct _mc_named_kms_provider_oauth_map_t mc_named_kms_provider_oauth_map_t;
+
+mc_named_kms_provider_oauth_map_t *mc_named_kms_provider_oauth_map_new(void);
+void mc_named_kms_provider_oauth_map_destroy(mc_named_kms_provider_oauth_map_t *nkpom);
+
+// `mc_named_kms_provider_oauth_map_get_token` returns a copy of the base64 encoded oauth token, or NULL.
+char *mc_named_kms_provider_oauth_map_get_token(mc_named_kms_provider_oauth_map_t *nkpom, const char *kms_id);
+// `mc_named_kms_provider_oauth_map_add_response` overwrites an entry if `kms_id` exists.
+bool mc_named_kms_provider_oauth_map_add_response(mc_named_kms_provider_oauth_map_t *nkpom,
+                                                  const char *kms_id,
+                                                  bson_t *response,
+                                                  mongocrypt_status_t *status);
+
 #endif /* MONGOCRYPT_CACHE_OAUTH_PRIVATE_H */

@@ -17,6 +17,7 @@
 #include <mongocrypt-opts-private.h>
 
 #include <kms_message/kms_b64.h> // kms_message_b64_pton
+#include <mongocrypt-cache-oauth-private.h>
 #include <test-mongocrypt-assert-match-bson.h>
 #include <test-mongocrypt.h>
 
@@ -29,6 +30,90 @@
     "8ju7OYTV63AwfLor8Hg9qzo8lyYC6H3RSfdJ9g9aXdCRfGZJgpbpchJUjR06JMLR"
 
 #define BSON_STR(...) #__VA_ARGS__
+
+static void test_mc_named_kms_provider_oauth_map(_mongocrypt_tester_t *tester) {
+    // Create an unused `mongocrypt_t` to initialize library with `_mongocrypt_do_init`. Otherwise, parsing base64 may
+    // fail.
+    {
+        mongocrypt_t *unused = mongocrypt_new();
+        mongocrypt_destroy(unused);
+    }
+
+    printf("test_mc_named_kms_provider_oauth_map ... begin\n");
+    fflush(stdout);
+
+    mongocrypt_status_t *status = mongocrypt_status_new();
+    bson_t *response1 = TMP_BSON(BSON_STR({"access_token" : "foo", "expires_in" : 1234}));
+    bson_t *response2 = TMP_BSON(BSON_STR({"access_token" : "bar", "expires_in" : 4567}));
+
+    // Test inserting one entry.
+    {
+        mc_named_kms_provider_oauth_map_t *nkpmo = mc_named_kms_provider_oauth_map_new();
+        ASSERT(NULL == mc_named_kms_provider_oauth_map_get_token(nkpmo, "local:1"));
+        ASSERT_OK_STATUS(mc_named_kms_provider_oauth_map_add_response(nkpmo, "local:1", response1, status), status);
+        char *got = mc_named_kms_provider_oauth_map_get_token(nkpmo, "local:1");
+        ASSERT_STREQUAL(got, "foo");
+        bson_free(got);
+        mc_named_kms_provider_oauth_map_destroy(nkpmo);
+    }
+
+    // Test inserting two entries.
+    {
+        mc_named_kms_provider_oauth_map_t *nkpmo = mc_named_kms_provider_oauth_map_new();
+
+        // Insert first.
+        {
+            ASSERT(NULL == mc_named_kms_provider_oauth_map_get_token(nkpmo, "local:1"));
+            ASSERT_OK_STATUS(mc_named_kms_provider_oauth_map_add_response(nkpmo, "local:1", response1, status), status);
+            char *got = mc_named_kms_provider_oauth_map_get_token(nkpmo, "local:1");
+            ASSERT_STREQUAL(got, "foo");
+            bson_free(got);
+        }
+
+        // Insert second.
+        {
+            ASSERT(NULL == mc_named_kms_provider_oauth_map_get_token(nkpmo, "local:2"));
+            ASSERT_OK_STATUS(mc_named_kms_provider_oauth_map_add_response(nkpmo, "local:2", response2, status), status);
+            char *got = mc_named_kms_provider_oauth_map_get_token(nkpmo, "local:2");
+            ASSERT_STREQUAL(got, "bar");
+            bson_free(got);
+        }
+
+        mc_named_kms_provider_oauth_map_destroy(nkpmo);
+    }
+
+    // Test overwriting an entry.
+    {
+        mc_named_kms_provider_oauth_map_t *nkpmo = mc_named_kms_provider_oauth_map_new();
+
+        // Insert first.
+        {
+            ASSERT(NULL == mc_named_kms_provider_oauth_map_get_token(nkpmo, "local:1"));
+            ASSERT_OK_STATUS(mc_named_kms_provider_oauth_map_add_response(nkpmo, "local:1", response1, status), status);
+            char *got = mc_named_kms_provider_oauth_map_get_token(nkpmo, "local:1");
+            ASSERT_STREQUAL(got, "foo");
+            bson_free(got);
+        }
+
+        // Overwrite 'local:1' with a different token.
+        {
+            ASSERT_OK_STATUS(mc_named_kms_provider_oauth_map_add_response(nkpmo, "local:1", response2, status), status);
+            char *got = mc_named_kms_provider_oauth_map_get_token(nkpmo, "local:1");
+            ASSERT_STREQUAL(got, "bar");
+            bson_free(got);
+        }
+
+        mc_named_kms_provider_oauth_map_destroy(nkpmo);
+    }
+    // Test getting a missing entry.
+    {
+        mc_named_kms_provider_oauth_map_t *nkpmo = mc_named_kms_provider_oauth_map_new();
+        ASSERT(NULL == mc_named_kms_provider_oauth_map_get_token(nkpmo, "local:1"));
+        mc_named_kms_provider_oauth_map_destroy(nkpmo);
+    }
+
+    mongocrypt_status_destroy(status);
+}
 
 static void test_rewrap_with_named_kms_provider_for_local(_mongocrypt_tester_t *tester) {
     mongocrypt_t *crypt = mongocrypt_new();
@@ -566,4 +651,5 @@ void _mongocrypt_tester_install_named_kms_providers(_mongocrypt_tester_t *tester
     INSTALL_TEST(test_create_datakey_with_named_kms_provider);
     INSTALL_TEST(test_explicit_with_named_kms_provider_for_local);
     INSTALL_TEST(test_rewrap_with_named_kms_provider_for_local);
+    INSTALL_TEST(test_mc_named_kms_provider_oauth_map);
 }

@@ -391,4 +391,85 @@ bool mc_named_kms_provider_map_is_empty(const mc_named_kms_provider_map_t *nkpm)
     return nkpm->entries.len == 0;
 }
 
+typedef struct {
+    char *kms_id;
+    _mongocrypt_cache_oauth_t *cache;
+} mc_named_kms_provider_oauth_map_entry_t;
+
+struct _mc_named_kms_provider_oauth_map_t {
+    mc_array_t entries;
+    mongocrypt_mutex_t mutex; // Guards `entries`.
+};
+
+mc_named_kms_provider_oauth_map_t *mc_named_kms_provider_oauth_map_new(void) {
+    mc_named_kms_provider_oauth_map_t *nkpom = bson_malloc0(sizeof(mc_named_kms_provider_oauth_map_t));
+    _mc_array_init(&nkpom->entries, sizeof(mc_named_kms_provider_oauth_map_entry_t));
+    _mongocrypt_mutex_init(&nkpom->mutex);
+    return nkpom;
+}
+
+void mc_named_kms_provider_oauth_map_destroy(mc_named_kms_provider_oauth_map_t *nkpom) {
+    if (!nkpom) {
+        return;
+    }
+    _mongocrypt_mutex_cleanup(&nkpom->mutex);
+    for (size_t i = 0; i < nkpom->entries.len; i++) {
+        mc_named_kms_provider_oauth_map_entry_t nkpome =
+            _mc_array_index(&nkpom->entries, mc_named_kms_provider_oauth_map_entry_t, i);
+        bson_free(nkpome.kms_id);
+        _mongocrypt_cache_oauth_destroy(nkpome.cache);
+    }
+    _mc_array_destroy(&nkpom->entries);
+    bson_free(nkpom);
+}
+
+char *mc_named_kms_provider_oauth_map_get_token(mc_named_kms_provider_oauth_map_t *nkpom, const char *kms_id) {
+    BSON_ASSERT_PARAM(nkpom);
+    BSON_ASSERT_PARAM(kms_id);
+
+    _mongocrypt_mutex_lock(&nkpom->mutex);
+
+    for (size_t i = 0; i < nkpom->entries.len; i++) {
+        mc_named_kms_provider_oauth_map_entry_t nkpome =
+            _mc_array_index(&nkpom->entries, mc_named_kms_provider_oauth_map_entry_t, i);
+        if (0 == strcmp(nkpome.kms_id, kms_id)) {
+            char *got = _mongocrypt_cache_oauth_get(nkpome.cache);
+            _mongocrypt_mutex_unlock(&nkpom->mutex);
+            return got;
+        }
+    }
+
+    _mongocrypt_mutex_unlock(&nkpom->mutex);
+    return NULL;
+}
+
+bool mc_named_kms_provider_oauth_map_add_response(mc_named_kms_provider_oauth_map_t *nkpom,
+                                                  const char *kms_id,
+                                                  bson_t *response,
+                                                  mongocrypt_status_t *status) {
+    BSON_ASSERT_PARAM(nkpom);
+    BSON_ASSERT_PARAM(kms_id);
+    BSON_ASSERT_PARAM(response);
+
+    _mongocrypt_mutex_lock(&nkpom->mutex);
+
+    // Check if there is an existing entry.
+    for (size_t i = 0; i < nkpom->entries.len; i++) {
+        mc_named_kms_provider_oauth_map_entry_t nkpome =
+            _mc_array_index(&nkpom->entries, mc_named_kms_provider_oauth_map_entry_t, i);
+        if (0 == strcmp(nkpome.kms_id, kms_id)) {
+            bool ok = _mongocrypt_cache_oauth_add(nkpome.cache, response, status);
+            _mongocrypt_mutex_unlock(&nkpom->mutex);
+            return ok;
+        }
+    }
+    // Create an entry.
+    mc_named_kms_provider_oauth_map_entry_t to_put = {.kms_id = bson_strdup(kms_id),
+                                                      .cache = _mongocrypt_cache_oauth_new()};
+    _mc_array_append_val(&nkpom->entries, to_put);
+    bool ok = _mongocrypt_cache_oauth_add(to_put.cache, response, status);
+    _mongocrypt_mutex_unlock(&nkpom->mutex);
+    return ok;
+}
+
 #undef KEY_HELP
