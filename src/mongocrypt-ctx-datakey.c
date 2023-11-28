@@ -213,7 +213,6 @@ static bool _kms_start(mongocrypt_ctx_t *ctx) {
             if (access_token) {
                 if (!_mongocrypt_kms_ctx_init_azure_wrapkey(&dkctx->kms,
                                                             &ctx->crypt->log,
-                                                            kms_providers,
                                                             nkp->kms_id,
                                                             &ctx->opts,
                                                             access_token,
@@ -281,7 +280,6 @@ static bool _kms_start(mongocrypt_ctx_t *ctx) {
         if (access_token) {
             if (!_mongocrypt_kms_ctx_init_azure_wrapkey(&dkctx->kms,
                                                         &ctx->crypt->log,
-                                                        kms_providers,
                                                         "unused",
                                                         &ctx->opts,
                                                         access_token,

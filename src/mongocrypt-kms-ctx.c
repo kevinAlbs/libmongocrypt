@@ -1093,7 +1093,6 @@ fail:
 
 bool _mongocrypt_kms_ctx_init_azure_wrapkey(mongocrypt_kms_ctx_t *kms,
                                             _mongocrypt_log_t *log,
-                                            _mongocrypt_opts_kms_providers_t *kms_providers,
                                             const char *kms_id,
                                             struct __mongocrypt_ctx_opts_t *ctx_opts,
                                             const char *access_token,
