@@ -39,9 +39,6 @@ static void test_mc_named_kms_provider_oauth_map(_mongocrypt_tester_t *tester) {
         mongocrypt_destroy(unused);
     }
 
-    printf("test_mc_named_kms_provider_oauth_map ... begin\n");
-    fflush(stdout);
-
     mongocrypt_status_t *status = mongocrypt_status_new();
     bson_t *response1 = TMP_BSON(BSON_STR({"access_token" : "foo", "expires_in" : 1234}));
     bson_t *response2 = TMP_BSON(BSON_STR({"access_token" : "bar", "expires_in" : 4567}));
