@@ -547,6 +547,8 @@ bool _mongocrypt_key_broker_add_doc(_mongocrypt_key_broker_t *kb,
                 if (!_mongocrypt_kms_ctx_init_azure_auth(&kb->auth_request_azure.kms,
                                                          &kb->crypt->log,
                                                          kms_providers,
+                                                         kb->crypt->opts.nkpm,
+                                                         "unimplemented",
                                                          /* The key vault endpoint is used to determine the scope. */
                                                          key_doc->kek.provider.azure.key_vault_endpoint)) {
                     mongocrypt_kms_ctx_status(&kb->auth_request_azure.kms, kb->status);

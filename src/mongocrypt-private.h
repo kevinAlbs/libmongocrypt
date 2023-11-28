@@ -125,6 +125,7 @@ struct _mongocrypt_t {
     uint32_t ctx_counter;
     _mongocrypt_cache_oauth_t *cache_oauth_azure;
     _mongocrypt_cache_oauth_t *cache_oauth_gcp;
+    mc_named_kms_provider_oauth_map_t *nkpom;
     /// A CSFLE DLL vtable, initialized by mongocrypt_init
     _mongo_crypt_v1_vtable csfle;
     /// Pointer to the global csfle_lib object. Should not be freed directly.

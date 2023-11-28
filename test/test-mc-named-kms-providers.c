@@ -318,7 +318,7 @@ static void test_create_datakey_with_named_kms_provider(_mongocrypt_tester_t *te
             ASSERT(kctx);
             const char *endpoint;
             ASSERT_OK(mongocrypt_kms_ctx_endpoint(kctx, &endpoint), kctx);
-            ASSERT_STREQUAL(endpoint, "placeholder-identityPlatformEndpoint.com");
+            ASSERT_STREQUAL(endpoint, "placeholder-identityPlatformEndpoint.com:443");
             ASSERT_OK(mongocrypt_kms_ctx_feed(kctx, TEST_FILE("./test/data/azure-auth/oauth-response.txt")), kctx);
             kctx = mongocrypt_ctx_next_kms_ctx(ctx);
             ASSERT(!kctx);
@@ -332,7 +332,7 @@ static void test_create_datakey_with_named_kms_provider(_mongocrypt_tester_t *te
             ASSERT(kctx);
             const char *endpoint;
             ASSERT_OK(mongocrypt_kms_ctx_endpoint(kctx, &endpoint), kctx);
-            ASSERT_STREQUAL(endpoint, "placeholder-keyVaultEndpoint.com");
+            ASSERT_STREQUAL(endpoint, "placeholder-keyVaultEndpoint.com:443");
             ASSERT_OK(mongocrypt_kms_ctx_feed(kctx, TEST_FILE("./test/data/azure-auth/encrypt-response.txt")), kctx);
             kctx = mongocrypt_ctx_next_kms_ctx(ctx);
             ASSERT(!kctx);

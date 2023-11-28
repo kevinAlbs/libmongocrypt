@@ -177,6 +177,7 @@ static bool _kms_start(mongocrypt_ctx_t *ctx) {
     _mongocrypt_ctx_datakey_t *dkctx;
     char *access_token = NULL;
     _mongocrypt_opts_kms_providers_t *const kms_providers = _mongocrypt_ctx_kms_providers(ctx);
+    mongocrypt_status_t *status = ctx->status;
 
     dkctx = (_mongocrypt_ctx_datakey_t *)ctx;
 
@@ -185,19 +186,67 @@ static bool _kms_start(mongocrypt_ctx_t *ctx) {
     _mongocrypt_kms_ctx_cleanup(&dkctx->kms);
     memset(&dkctx->kms, 0, sizeof(dkctx->kms));
     dkctx->kms_returned = false;
-    if (ctx->opts.kek.kms_provider == MONGOCRYPT_KMS_PROVIDER_LOCAL) {
-        const _mongocrypt_buffer_t *kek;
-        if (ctx->opts.kek.is_named) {
-            // Assert KMS provider is configured. _mongocrypt_ctx_init verifies the KEK has a matching KMS provider.
-            BSON_ASSERT(mc_named_kms_provider_map_has(ctx->crypt->opts.nkpm, ctx->opts.kek.kms_id));
-            const mc_named_kms_provider_t *nkp =
-                mc_named_kms_provider_map_get(ctx->crypt->opts.nkpm, ctx->opts.kek.kms_id);
-            kek = &nkp->value.local.key;
+
+    if (ctx->opts.kek.is_named) {
+        // Assert KMS provider is configured. _mongocrypt_ctx_init verifies the KEK has a matching KMS provider.
+        BSON_ASSERT(mc_named_kms_provider_map_has(ctx->crypt->opts.nkpm, ctx->opts.kek.kms_id));
+        const mc_named_kms_provider_t *nkp = mc_named_kms_provider_map_get(ctx->crypt->opts.nkpm, ctx->opts.kek.kms_id);
+        if (ctx->opts.kek.kms_provider == MONGOCRYPT_KMS_PROVIDER_LOCAL) {
+            const _mongocrypt_buffer_t *kek = &nkp->value.local.key;
+            if (!_mongocrypt_wrap_key(ctx->crypt->crypto,
+                                      kek,
+                                      &dkctx->plaintext_key_material,
+                                      &dkctx->encrypted_key_material,
+                                      ctx->status)) {
+                _mongocrypt_ctx_fail(ctx);
+                goto done;
+            }
+            ctx->state = MONGOCRYPT_CTX_READY;
+        } else if (ctx->opts.kek.kms_provider == MONGOCRYPT_KMS_PROVIDER_AZURE) {
+            // Check if accessToken was directly configured.
+            if (nkp->value.azure.access_token) {
+                access_token = bson_strdup(nkp->value.azure.access_token);
+            } else {
+                // Try to access from named KMS provider oauth cache.
+                access_token = mc_named_kms_provider_oauth_map_get_token(ctx->crypt->nkpom, ctx->opts.kek.kms_id);
+            }
+            if (access_token) {
+                if (!_mongocrypt_kms_ctx_init_azure_wrapkey(&dkctx->kms,
+                                                            &ctx->crypt->log,
+                                                            kms_providers,
+                                                            nkp->kms_id,
+                                                            &ctx->opts,
+                                                            access_token,
+                                                            &dkctx->plaintext_key_material)) {
+                    mongocrypt_kms_ctx_status(&dkctx->kms, ctx->status);
+                    _mongocrypt_ctx_fail(ctx);
+                    goto done;
+                }
+            } else {
+                if (!_mongocrypt_kms_ctx_init_azure_auth(&dkctx->kms,
+                                                         &ctx->crypt->log,
+                                                         kms_providers,
+                                                         ctx->crypt->opts.nkpm,
+                                                         nkp->kms_id,
+                                                         nkp->value.azure.identity_platform_endpoint)) {
+                    mongocrypt_kms_ctx_status(&dkctx->kms, ctx->status);
+                    _mongocrypt_ctx_fail(ctx);
+                    goto done;
+                }
+            }
+            ctx->state = MONGOCRYPT_CTX_NEED_KMS;
         } else {
-            // Assert KMS provider is configured. _mongocrypt_ctx_init verifies the KEK has a matching KMS provider.
-            BSON_ASSERT(kms_providers->configured_providers & MONGOCRYPT_KMS_PROVIDER_LOCAL);
-            kek = &kms_providers->local.key;
+            CLIENT_ERR("making KMS request for data key with named KMS provider for `%s` is not yet supported",
+                       nkp->kms_id);
+            goto done;
         }
+    }
+    // Begin: unnamed KMS providers.
+    else if (ctx->opts.kek.kms_provider == MONGOCRYPT_KMS_PROVIDER_LOCAL) {
+        const _mongocrypt_buffer_t *kek;
+        // Assert KMS provider is configured. _mongocrypt_ctx_init verifies the KEK has a matching KMS provider.
+        BSON_ASSERT(kms_providers->configured_providers & MONGOCRYPT_KMS_PROVIDER_LOCAL);
+        kek = &kms_providers->local.key;
         if (!_mongocrypt_wrap_key(ctx->crypt->crypto,
                                   kek,
                                   &dkctx->plaintext_key_material,
@@ -233,6 +282,7 @@ static bool _kms_start(mongocrypt_ctx_t *ctx) {
             if (!_mongocrypt_kms_ctx_init_azure_wrapkey(&dkctx->kms,
                                                         &ctx->crypt->log,
                                                         kms_providers,
+                                                        "unused",
                                                         &ctx->opts,
                                                         access_token,
                                                         &dkctx->plaintext_key_material)) {
@@ -244,6 +294,8 @@ static bool _kms_start(mongocrypt_ctx_t *ctx) {
             if (!_mongocrypt_kms_ctx_init_azure_auth(&dkctx->kms,
                                                      &ctx->crypt->log,
                                                      kms_providers,
+                                                     ctx->crypt->opts.nkpm,
+                                                     "unused",
                                                      ctx->opts.kek.provider.azure.key_vault_endpoint)) {
                 mongocrypt_kms_ctx_status(&dkctx->kms, ctx->status);
                 _mongocrypt_ctx_fail(ctx);
@@ -311,14 +363,27 @@ static bool _kms_done(mongocrypt_ctx_t *ctx) {
         return _mongocrypt_ctx_fail_w_msg(ctx, "KMS response unfinished");
     }
 
+    const char *kms_id = dkctx->kms.kms_id;
+    bool is_named = false;
+
+    if (mc_named_kms_provider_map_has(ctx->crypt->opts.nkpm, kms_id)) {
+        is_named = true;
+    }
+
     /* If this was an oauth request, store the response and proceed to encrypt.
      */
     if (dkctx->kms.req_type == MONGOCRYPT_KMS_AZURE_OAUTH) {
         bson_t oauth_response;
 
         BSON_ASSERT(_mongocrypt_buffer_to_bson(&dkctx->kms.result, &oauth_response));
-        if (!_mongocrypt_cache_oauth_add(ctx->crypt->cache_oauth_azure, &oauth_response, status)) {
-            return _mongocrypt_ctx_fail(ctx);
+        if (is_named) {
+            if (!mc_named_kms_provider_oauth_map_add_response(ctx->crypt->nkpom, kms_id, &oauth_response, status)) {
+                return _mongocrypt_ctx_fail(ctx);
+            }
+        } else {
+            if (!_mongocrypt_cache_oauth_add(ctx->crypt->cache_oauth_azure, &oauth_response, status)) {
+                return _mongocrypt_ctx_fail(ctx);
+            }
         }
         return _kms_start(ctx);
     } else if (dkctx->kms.req_type == MONGOCRYPT_KMS_GCP_OAUTH) {
