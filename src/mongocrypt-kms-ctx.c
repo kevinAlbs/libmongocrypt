@@ -116,7 +116,7 @@ _set_kms_crypto_hooks(_mongocrypt_crypto_t *crypto, ctx_with_status_t *ctx_with_
     }
 }
 
-static bool is_kms(_kms_request_type_t kms_type) {
+static bool is_kmip(_kms_request_type_t kms_type) {
     return kms_type == MONGOCRYPT_KMS_KMIP_REGISTER || kms_type == MONGOCRYPT_KMS_KMIP_ACTIVATE
         || kms_type == MONGOCRYPT_KMS_KMIP_GET;
 }
@@ -124,7 +124,7 @@ static bool is_kms(_kms_request_type_t kms_type) {
 static void _init_common(mongocrypt_kms_ctx_t *kms, _mongocrypt_log_t *log, _kms_request_type_t kms_type) {
     BSON_ASSERT_PARAM(kms);
 
-    if (is_kms(kms_type)) {
+    if (is_kmip(kms_type)) {
         kms->parser = kms_kmip_response_parser_new(NULL /* reserved */);
     } else {
         kms->parser = kms_response_parser_new();
@@ -878,7 +878,7 @@ bool mongocrypt_kms_ctx_feed(mongocrypt_kms_ctx_t *kms, mongocrypt_binary_t *byt
     }
 
     if (!kms_response_parser_feed(kms->parser, bytes->data, bytes->len)) {
-        if (is_kms(kms->req_type)) {
+        if (is_kmip(kms->req_type)) {
             /* The KMIP response parser does not suport kms_response_parser_status.
              * Only report the error string. */
             CLIENT_ERR("KMS response parser error with error: '%s'", kms_response_parser_error(kms->parser));
