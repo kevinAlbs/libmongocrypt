@@ -499,18 +499,40 @@ bool _mongocrypt_key_broker_add_doc(_mongocrypt_key_broker_t *kb,
     /* If the KMS provider is local, decrypt immediately. Otherwise, create the
      * HTTP KMS request. */
     BSON_ASSERT(kb->crypt);
-    if (kek_provider == MONGOCRYPT_KMS_PROVIDER_LOCAL) {
-        const _mongocrypt_buffer_t *local_kek;
-        if (key_doc->kek.is_named) {
-            const mc_named_kms_provider_t *nkp =
-                mc_named_kms_provider_map_get(kb->crypt->opts.nkpm, key_doc->kek.kms_id);
-            // Expect non-NULL return. `mc_named_kms_provider_map_has` was previously called.
-            BSON_ASSERT(nkp);
+    if (key_doc->kek.is_named) {
+        const mc_named_kms_provider_t *nkp = mc_named_kms_provider_map_get(kb->crypt->opts.nkpm, key_doc->kek.kms_id);
+        // Expect non-NULL return. `mc_named_kms_provider_map_has` was previously called.
+        BSON_ASSERT(nkp);
+        if (kek_provider == MONGOCRYPT_KMS_PROVIDER_LOCAL) {
+            const _mongocrypt_buffer_t *local_kek;
             BSON_ASSERT(nkp->type == MONGOCRYPT_KMS_PROVIDER_LOCAL);
             local_kek = &nkp->value.local.key;
+
+            if (!_mongocrypt_unwrap_key(kb->crypt->crypto,
+                                        local_kek,
+                                        &key_returned->doc->key_material,
+                                        &key_returned->decrypted_key_material,
+                                        kb->status)) {
+                _key_broker_fail(kb);
+                goto done;
+            }
+            key_returned->decrypted = true;
+            if (!_store_to_cache(kb, key_returned)) {
+                goto done;
+            }
         } else {
-            local_kek = &kms_providers->local.key;
+            mongocrypt_status_t *status = kb->status;
+            CLIENT_ERR("key broker does not yet support decrypting keys for named provider of this type: %s",
+                       key_doc->kek.kms_id);
+            _key_broker_fail(kb);
+            goto done;
         }
+    }
+    // Begin: unnamed KMS providers.
+    else if (kek_provider == MONGOCRYPT_KMS_PROVIDER_LOCAL) {
+        const _mongocrypt_buffer_t *local_kek;
+
+        local_kek = &kms_providers->local.key;
 
         if (!_mongocrypt_unwrap_key(kb->crypt->crypto,
                                     local_kek,
