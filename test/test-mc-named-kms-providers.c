@@ -31,6 +31,63 @@
 
 #define BSON_STR(...) #__VA_ARGS__
 
+extern auth_request_t *auth_request_new();
+extern mc_named_kms_provider_auth_request_map_t *mc_named_kms_provider_auth_request_map_new(void);
+extern void mc_named_kms_provider_auth_request_map_destroy(mc_named_kms_provider_auth_request_map_t *nkparm);
+extern auth_request_t *mc_named_kms_provider_auth_request_map_get_mut(mc_named_kms_provider_auth_request_map_t *nkparm,
+                                                                      const char *kms_id);
+extern void mc_named_kms_provider_auth_request_map_put(mc_named_kms_provider_auth_request_map_t *nkparm,
+                                                       auth_request_t *ar);
+
+static void test_mc_named_kms_provider_auth_request_map(_mongocrypt_tester_t *tester) {
+    mongocrypt_t *crypt = mongocrypt_new();
+    mongocrypt_binary_t *kms_providers = TEST_BSON(BSON_STR({
+        "azure:2" : {
+            "tenantId" : "placeholder-tenantId",
+            "clientId" : "placeholder-clientId",
+            "clientSecret" : "placeholder-clientSecret",
+            "identityPlatformEndpoint" : "placeholder-identityPlatformEndpoint.com"
+        }
+    }));
+    ASSERT_OK(mongocrypt_setopt_kms_providers(crypt, kms_providers), crypt);
+    ASSERT_OK(mongocrypt_init(crypt), crypt);
+
+    mongocrypt_status_t *status = mongocrypt_status_new();
+
+    // Test inserting one entry.
+    {
+        auth_request_t *ar;
+        // Create auth request.
+        {
+            ar = auth_request_new();
+            _mongocrypt_endpoint_t *endpoint =
+                _mongocrypt_endpoint_new("placeholder-keyVaultEndpoint.com", -1, NULL /* opts */, status);
+            ASSERT_OK_STATUS(endpoint, status);
+            ASSERT_OK(_mongocrypt_kms_ctx_init_azure_auth(&ar->kms,
+                                                          &crypt->log,
+                                                          &crypt->opts.kms_providers,
+                                                          crypt->opts.nkpm,
+                                                          "azure:2",
+                                                          endpoint),
+                      &ar->kms);
+            ar->initialized = true;
+            _mongocrypt_endpoint_destroy(endpoint);
+        }
+
+        mc_named_kms_provider_auth_request_map_t *nkparm = mc_named_kms_provider_auth_request_map_new();
+        mc_named_kms_provider_auth_request_map_put(nkparm, ar);
+        auth_request_t *got = mc_named_kms_provider_auth_request_map_get_mut(nkparm, "azure:2");
+
+        ASSERT(got);
+        ASSERT(got->initialized);
+
+        mc_named_kms_provider_auth_request_map_destroy(nkparm);
+    }
+
+    mongocrypt_status_destroy(status);
+    mongocrypt_destroy(crypt);
+}
+
 static void test_mc_named_kms_provider_oauth_map(_mongocrypt_tester_t *tester) {
     // Create an unused `mongocrypt_t` to initialize library with `_mongocrypt_do_init`. Otherwise, parsing base64 may
     // fail.
@@ -694,4 +751,5 @@ void _mongocrypt_tester_install_named_kms_providers(_mongocrypt_tester_t *tester
     INSTALL_TEST(test_explicit_with_named_kms_provider_for_local);
     INSTALL_TEST(test_rewrap_with_named_kms_provider_for_local);
     INSTALL_TEST(test_mc_named_kms_provider_oauth_map);
+    INSTALL_TEST(test_mc_named_kms_provider_auth_request_map);
 }

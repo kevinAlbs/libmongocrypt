@@ -14,8 +14,89 @@
  * limitations under the License.
  */
 
+#include "mc-array-private.h"
 #include "mongocrypt-key-broker-private.h"
 #include "mongocrypt-private.h"
+
+auth_request_t *auth_request_new() {
+    return bson_malloc0(sizeof(auth_request_t));
+}
+
+void auth_request_destroy(auth_request_t *ar) {
+    if (!ar) {
+        return;
+    }
+    _mongocrypt_kms_ctx_cleanup(&ar->kms);
+    bson_free(ar);
+}
+
+struct _mc_named_kms_provider_auth_request_map_t {
+    mc_array_t entries;
+};
+
+mc_named_kms_provider_auth_request_map_t *mc_named_kms_provider_auth_request_map_new(void) {
+    mc_named_kms_provider_auth_request_map_t *nkparm = bson_malloc0(sizeof(mc_named_kms_provider_auth_request_map_t));
+    _mc_array_init(&nkparm->entries, sizeof(auth_request_t *));
+    return nkparm;
+}
+
+void mc_named_kms_provider_auth_request_map_destroy(mc_named_kms_provider_auth_request_map_t *nkparm) {
+    if (!nkparm) {
+        return;
+    }
+    for (size_t i = 0; i < nkparm->entries.len; i++) {
+        auth_request_t *ar = _mc_array_index(&nkparm->entries, auth_request_t *, i);
+        auth_request_destroy(ar);
+    }
+    _mc_array_destroy(&nkparm->entries);
+    bson_free(nkparm);
+}
+
+// `mc_named_kms_provider_auth_request_map_get_mut` returns NULL if `name` is not in the map.
+auth_request_t *mc_named_kms_provider_auth_request_map_get_mut(mc_named_kms_provider_auth_request_map_t *nkparm,
+                                                               const char *kms_id) {
+    BSON_ASSERT_PARAM(nkparm);
+    BSON_ASSERT_PARAM(kms_id);
+    for (size_t i = 0; i < nkparm->entries.len; i++) {
+        auth_request_t *ar = _mc_array_index(&nkparm->entries, auth_request_t *, i);
+        if (0 == strcmp(ar->kms.kms_id, kms_id)) {
+            return ar;
+        }
+    }
+    return NULL;
+}
+
+bool mc_named_kms_provider_auth_request_map_has(mc_named_kms_provider_auth_request_map_t *nkparm, const char *kms_id) {
+    BSON_ASSERT_PARAM(nkparm);
+    BSON_ASSERT_PARAM(kms_id);
+    for (size_t i = 0; i < nkparm->entries.len; i++) {
+        auth_request_t *ar = _mc_array_index(&nkparm->entries, auth_request_t *, i);
+        if (0 == strcmp(ar->kms.kms_id, kms_id)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// `mc_named_kms_provider_auth_request_map_put` overwrites an entry if `kms_id` is present in the map.
+// `ar` is moved into the map.
+void mc_named_kms_provider_auth_request_map_put(mc_named_kms_provider_auth_request_map_t *nkparm,
+                                                auth_request_t *to_put) {
+    BSON_ASSERT_PARAM(nkparm);
+
+    // Check if there is an existing entry.
+    for (size_t i = 0; i < nkparm->entries.len; i++) {
+        auth_request_t *ar = _mc_array_index(&nkparm->entries, auth_request_t *, i);
+        if (0 == strcmp(ar->kms.kms_id, to_put->kms.kms_id)) {
+            // Overwrite.
+            auth_request_destroy(ar);
+            _mc_array_index(&nkparm->entries, auth_request_t *, i) = to_put;
+            return;
+        }
+    }
+
+    _mc_array_append_val(&nkparm->entries, to_put);
+}
 
 void _mongocrypt_key_broker_init(_mongocrypt_key_broker_t *kb, mongocrypt_t *crypt) {
     BSON_ASSERT_PARAM(kb);
