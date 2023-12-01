@@ -479,7 +479,7 @@ set (TEST_MONGOCRYPT_SOURCES
    test/test-mongocrypt-crypto.c
    test/test-mongocrypt-crypto-hooks.c
    test/test-mongocrypt-crypto-std-hooks.c
-   test/test-mongocrypt-csfle-lib.c
+   # test/test-mongocrypt-csfle-lib.c - TEMP: comment out due to stub library not building with ASAN.
    test/test-mongocrypt-ctx-decrypt.c
    test/test-mongocrypt-ctx-encrypt.c
    test/test-mongocrypt-ctx-rewrap-many-datakey.c
