@@ -37,10 +37,11 @@
 BSON_STATIC_ASSERT(sizeof(mongocrypt_log_level_t) == 4);
 
 const char *mongocrypt_version(uint32_t *len) {
+    const char *ret = "1.9.0-pre.D2731";
     if (len) {
-        *len = (uint32_t)strlen(MONGOCRYPT_VERSION);
+        *len = (uint32_t)strlen(ret);
     }
-    return MONGOCRYPT_VERSION;
+    return ret;
 }
 
 void _mongocrypt_set_error(mongocrypt_status_t *status,
