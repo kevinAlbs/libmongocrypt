@@ -106,6 +106,7 @@ void _mongocrypt_key_broker_init(_mongocrypt_key_broker_t *kb, mongocrypt_t *cry
     kb->crypt = crypt;
     kb->state = KB_REQUESTING;
     kb->status = mongocrypt_status_new();
+    kb->nkparm = mc_named_kms_provider_auth_request_map_new();
 }
 
 /*
@@ -601,6 +602,47 @@ bool _mongocrypt_key_broker_add_doc(_mongocrypt_key_broker_t *kb,
             if (!_store_to_cache(kb, key_returned)) {
                 goto done;
             }
+        } else if (kek_provider == MONGOCRYPT_KMS_PROVIDER_AZURE) {
+            BSON_ASSERT(nkp->type == MONGOCRYPT_KMS_PROVIDER_AZURE);
+
+            if (nkp->value.azure.access_token) {
+                access_token = bson_strdup(nkp->value.azure.access_token);
+            } else {
+                access_token = mc_named_kms_provider_oauth_map_get_token(kb->crypt->nkpom, nkp->kms_id);
+            }
+            if (!access_token) {
+                key_returned->needs_auth = true;
+
+                // Create an oauth request if one does not already exist.
+                if (!mc_named_kms_provider_auth_request_map_has(kb->nkparm, nkp->kms_id)) {
+                    auth_request_t *ar = auth_request_new();
+                    if (!_mongocrypt_kms_ctx_init_azure_auth(
+                            &ar->kms,
+                            &kb->crypt->log,
+                            kms_providers,
+                            kb->crypt->opts.nkpm,
+                            nkp->kms_id,
+                            /* The key vault endpoint is used to determine the scope. */
+                            key_doc->kek.provider.azure.key_vault_endpoint)) {
+                        auth_request_destroy(ar);
+                        mongocrypt_kms_ctx_status(&ar->kms, kb->status);
+                        _key_broker_fail(kb);
+                        goto done;
+                    }
+                    ar->initialized = true;
+                    mc_named_kms_provider_auth_request_map_put(kb->nkparm, ar); // takes ownership of `ar`.
+                }
+            } else {
+                if (!_mongocrypt_kms_ctx_init_azure_unwrapkey(&key_returned->kms,
+                                                              kms_providers,
+                                                              access_token,
+                                                              key_returned->doc,
+                                                              &kb->crypt->log)) {
+                    mongocrypt_kms_ctx_status(&key_returned->kms, kb->status);
+                    bson_free(access_token);
+                    return _key_broker_fail(kb);
+                }
+            }
         } else {
             mongocrypt_status_t *status = kb->status;
             CLIENT_ERR("key broker does not yet support decrypting keys for named provider of this type: %s",
@@ -763,9 +805,9 @@ bool _mongocrypt_key_broker_docs_done(_mongocrypt_key_broker_t *kb) {
 
     /* If there are any requests left unsatisfied, error. */
     if (!_all_key_requests_satisfied(kb)) {
-        return _key_broker_fail_w_msg(
-            kb,
-            "not all keys requested were satisfied. Verify that key vault DB/collection name was correctly specified.");
+        return _key_broker_fail_w_msg(kb,
+                                      "not all keys requested were satisfied. Verify that key vault DB/collection "
+                                      "name was correctly specified.");
     }
 
     /* Transition to the next state.
@@ -810,7 +852,16 @@ mongocrypt_kms_ctx_t *_mongocrypt_key_broker_next_kms(_mongocrypt_key_broker_t *
     }
 
     if (kb->state == KB_AUTHENTICATING) {
-        if (!kb->auth_request_azure.initialized && !kb->auth_request_gcp.initialized) {
+        bool nkp_any_initialized = false;
+        for (size_t i = 0; i < kb->nkparm->entries.len; i++) {
+            auth_request_t *ar = _mc_array_index(&kb->nkparm->entries, auth_request_t *, i);
+            if (ar->initialized) {
+                nkp_any_initialized = true;
+                break;
+            }
+        }
+
+        if (!kb->auth_request_azure.initialized && !kb->auth_request_gcp.initialized && !nkp_any_initialized) {
             _key_broker_fail_w_msg(kb,
                                    "unexpected, attempting to authenticate but "
                                    "KMS request not initialized");
@@ -824,6 +875,14 @@ mongocrypt_kms_ctx_t *_mongocrypt_key_broker_next_kms(_mongocrypt_key_broker_t *
         if (kb->auth_request_gcp.initialized && !kb->auth_request_gcp.returned) {
             kb->auth_request_gcp.returned = true;
             return &kb->auth_request_gcp.kms;
+        }
+
+        for (size_t i = 0; i < kb->nkparm->entries.len; i++) {
+            auth_request_t *ar = _mc_array_index(&kb->nkparm->entries, auth_request_t *, i);
+            if (ar->initialized && !ar->returned) {
+                ar->returned = true;
+                return &ar->kms;
+            }
         }
 
         return NULL;
@@ -884,6 +943,24 @@ bool _mongocrypt_key_broker_kms_done(_mongocrypt_key_broker_t *kb, _mongocrypt_o
             }
         }
 
+        for (size_t i = 0; i < kb->nkparm->entries.len; i++) {
+            auth_request_t *ar = _mc_array_index(&kb->nkparm->entries, auth_request_t *, i);
+            BSON_ASSERT(ar->initialized); // Expect entries in the map to be "initialized".
+            if (!_mongocrypt_kms_ctx_result(&ar->kms, &oauth_response_buf)) {
+                mongocrypt_kms_ctx_status(&ar->kms, kb->status);
+                return _key_broker_fail(kb);
+            }
+
+            // Cache returned token.
+            BSON_ASSERT(_mongocrypt_buffer_to_bson(&oauth_response_buf, &oauth_response));
+            if (!mc_named_kms_provider_oauth_map_add_response(kb->crypt->nkpom,
+                                                              ar->kms.kms_id,
+                                                              &oauth_response,
+                                                              kb->status)) {
+                return _key_broker_fail(kb);
+            }
+        }
+
         /* Auth should be finished, create any remaining KMS requests. */
         for (key_returned = kb->keys_returned; NULL != key_returned; key_returned = key_returned->next) {
             char *access_token;
@@ -892,7 +969,39 @@ bool _mongocrypt_key_broker_kms_done(_mongocrypt_key_broker_t *kb, _mongocrypt_o
                 continue;
             }
 
-            if (key_returned->doc->kek.kms_provider == MONGOCRYPT_KMS_PROVIDER_AZURE) {
+            if (key_returned->doc->kek.is_named) {
+                if (key_returned->doc->kek.kms_provider == MONGOCRYPT_KMS_PROVIDER_AZURE) {
+                    // Expect access token to have been added to cache by the oauth request.
+                    access_token =
+                        mc_named_kms_provider_oauth_map_get_token(kb->crypt->nkpom, key_returned->doc->kek.kms_id);
+                    if (!access_token) {
+                        mongocrypt_status_t *status = kb->status;
+                        CLIENT_ERR("authentication failed, no oauth token for KMS: %s", key_returned->doc->kek.kms_id);
+                        return _key_broker_fail(kb);
+                    }
+
+                    if (!_mongocrypt_kms_ctx_init_azure_unwrapkey(&key_returned->kms,
+                                                                  kms_providers,
+                                                                  access_token,
+                                                                  key_returned->doc,
+                                                                  &kb->crypt->log)) {
+                        mongocrypt_kms_ctx_status(&key_returned->kms, kb->status);
+                        bson_free(access_token);
+                        return _key_broker_fail(kb);
+                    }
+
+                    key_returned->needs_auth = false;
+                    bson_free(access_token);
+                } else {
+                    mongocrypt_status_t *status = kb->status;
+                    CLIENT_ERR("Initializing decrypt request after oauth request not yet implemented for provider type "
+                               "identified by: %s",
+                               key_returned->doc->kek.kms_id);
+                    return false;
+                }
+            }
+            // Begin named.
+            else if (key_returned->doc->kek.kms_provider == MONGOCRYPT_KMS_PROVIDER_AZURE) {
                 if (kms_providers->azure.access_token) {
                     access_token = bson_strdup(kms_providers->azure.access_token);
                 } else {
@@ -1137,6 +1246,7 @@ void _mongocrypt_key_broker_cleanup(_mongocrypt_key_broker_t *kb) {
     _destroy_key_requests(kb->key_requests);
     _mongocrypt_kms_ctx_cleanup(&kb->auth_request_azure.kms);
     _mongocrypt_kms_ctx_cleanup(&kb->auth_request_gcp.kms);
+    mc_named_kms_provider_auth_request_map_destroy(kb->nkparm);
 }
 
 void _mongocrypt_key_broker_add_test_key(_mongocrypt_key_broker_t *kb, const _mongocrypt_buffer_t *key_id) {

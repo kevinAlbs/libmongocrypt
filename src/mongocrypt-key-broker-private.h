@@ -93,6 +93,8 @@ typedef struct _auth_request_t {
     bool initialized;
 } auth_request_t;
 
+typedef struct _mc_named_kms_provider_auth_request_map_t mc_named_kms_provider_auth_request_map_t;
+
 typedef struct {
     key_broker_state_t state;
     mongocrypt_status_t *status;
@@ -111,6 +113,8 @@ typedef struct {
     key_returned_t *decryptor_iter;
     auth_request_t auth_request_azure;
     auth_request_t auth_request_gcp;
+    // `nkparm` maps KMS ID to an `auth_request_t`.
+    mc_named_kms_provider_auth_request_map_t *nkparm;
 } _mongocrypt_key_broker_t;
 
 void _mongocrypt_key_broker_init(_mongocrypt_key_broker_t *kb, mongocrypt_t *crypt);
