@@ -108,9 +108,13 @@ class TestBulkDecryption(unittest.TestCase):
         key_id = json_data("keyDocument.json")["_id"]
         for i in range(NUM_FIELDS):
             val = bson.encode({"v": f"value {i:04}"})
-            doc[f"key{i:04}"] = self.encrypter.encrypt(
+            encrypted = self.encrypter.encrypt(
                 val, "AEAD_AES_256_CBC_HMAC_SHA_512-Deterministic", key_id=key_id
             )
+            # `encrypted` is the BSON data representing the document: `{ "v" : bson.Binary(...)}`
+            # Unwrap the bson.Binary value.
+            ciphertext = bson.decode(encrypted)["v"]
+            doc[f"key{i:04}"] = ciphertext
         encrypted = bson.encode(doc)
         # Warm up benchmark and discard the result.
         self.do_task(encrypted, duration=2)
