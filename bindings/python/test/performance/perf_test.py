@@ -93,6 +93,10 @@ class TestBulkDecryption(unittest.TestCase):
         ops = 0
         while time.monotonic() - start < duration:
             with self.mongocrypt.decryption_context(encrypted) as ctx:
+                if ctx.state == lib.MONGOCRYPT_CTX_NEED_MONGO_KEYS:
+                    # Key is requested on the first operation, then expected to be cached for one minute.
+                    ctx.add_mongo_operation_result (bson_data("keyDocument.json"))
+                    ctx.complete_mongo_operation()
                 self.assertEqual(ctx.state, lib.MONGOCRYPT_CTX_READY)
                 _ = ctx.finish()
             ops += 1
