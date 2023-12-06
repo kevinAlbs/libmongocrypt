@@ -227,30 +227,30 @@ bool _mongocrypt_opts_kms_providers_lookup(const _mongocrypt_opts_kms_providers_
                                            const char *kmsid,
                                            mc_kms_creds_t *out) {
     *out = (mc_kms_creds_t){0};
-    if (0 == strcmp(kmsid, "aws") && 0 != (kms_providers->configured_providers & MONGOCRYPT_KMS_PROVIDER_AWS)) {
+    if (0 != (kms_providers->configured_providers & MONGOCRYPT_KMS_PROVIDER_AWS) && 0 == strcmp(kmsid, "aws")) {
         out->type = MONGOCRYPT_KMS_PROVIDER_AWS;
         out->value.aws = kms_providers->aws;
         return true;
     }
-    if (0 == strcmp(kmsid, "azure") && 0 != (kms_providers->configured_providers & MONGOCRYPT_KMS_PROVIDER_AZURE)) {
+    if (0 != (kms_providers->configured_providers & MONGOCRYPT_KMS_PROVIDER_AZURE) && 0 == strcmp(kmsid, "azure")) {
         out->type = MONGOCRYPT_KMS_PROVIDER_AZURE;
         out->value.azure = kms_providers->azure;
         return true;
     }
 
-    if (0 == strcmp(kmsid, "gcp") && 0 != (kms_providers->configured_providers & MONGOCRYPT_KMS_PROVIDER_GCP)) {
+    if (0 != (kms_providers->configured_providers & MONGOCRYPT_KMS_PROVIDER_GCP) && 0 == strcmp(kmsid, "gcp")) {
         out->type = MONGOCRYPT_KMS_PROVIDER_GCP;
         out->value.gcp = kms_providers->gcp;
         return true;
     }
 
-    if (0 == strcmp(kmsid, "local") && 0 != (kms_providers->configured_providers & MONGOCRYPT_KMS_PROVIDER_LOCAL)) {
+    if (0 != (kms_providers->configured_providers & MONGOCRYPT_KMS_PROVIDER_LOCAL) && 0 == strcmp(kmsid, "local")) {
         out->type = MONGOCRYPT_KMS_PROVIDER_LOCAL;
         out->value.local = kms_providers->local;
         return true;
     }
 
-    if (0 == strcmp(kmsid, "kmip") && 0 != (kms_providers->configured_providers & MONGOCRYPT_KMS_PROVIDER_KMIP)) {
+    if (0 != (kms_providers->configured_providers & MONGOCRYPT_KMS_PROVIDER_KMIP) && 0 == strcmp(kmsid, "kmip")) {
         out->type = MONGOCRYPT_KMS_PROVIDER_KMIP;
         out->value.kmip = kms_providers->kmip;
         return true;
