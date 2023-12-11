@@ -504,7 +504,7 @@ bool mongocrypt_ctx_provide_kms_providers(mongocrypt_ctx_t *ctx, mongocrypt_bina
         return false;
     }
 
-    _mongocrypt_opts_kms_providers_init(&ctx->kms_providers);
+    _mongocrypt_opts_kms_providers_init(&ctx->per_ctx_kms_providers);
 
     if (!_mongocrypt_parse_kms_providers(kms_providers_definition,
                                          &ctx->per_ctx_kms_providers,
