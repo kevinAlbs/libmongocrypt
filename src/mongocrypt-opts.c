@@ -70,7 +70,7 @@ static void _mongocrypt_opts_kms_provider_aws_cleanup(_mongocrypt_opts_kms_provi
 }
 
 static void _mongocrypt_opts_kms_provider_kmip_cleanup(_mongocrypt_opts_kms_provider_kmip_t *kms_provider_kmip) {
-    bson_free(kms_provider_kmip->endpoint);
+    _mongocrypt_endpoint_destroy(kms_provider_kmip->endpoint);
 }
 
 void _mongocrypt_opts_kms_providers_cleanup(_mongocrypt_opts_kms_providers_t *kms_providers) {
@@ -93,7 +93,7 @@ void _mongocrypt_opts_kms_providers_cleanup(_mongocrypt_opts_kms_providers_t *km
             break;
         }
         case MONGOCRYPT_KMS_PROVIDER_LOCAL: {
-            _mongocrypt_buffer_cleanup(&kcwid.creds.value.local.key);
+            _mongocrypt_opts_kms_provider_local_cleanup(&kcwid.creds.value.local);
             break;
         }
         case MONGOCRYPT_KMS_PROVIDER_AZURE: {
@@ -105,7 +105,7 @@ void _mongocrypt_opts_kms_providers_cleanup(_mongocrypt_opts_kms_providers_t *km
             break;
         }
         case MONGOCRYPT_KMS_PROVIDER_KMIP: {
-            _mongocrypt_endpoint_destroy(kcwid.creds.value.kmip.endpoint);
+            _mongocrypt_opts_kms_provider_kmip_cleanup(&kcwid.creds.value.kmip);
             break;
         }
         }
