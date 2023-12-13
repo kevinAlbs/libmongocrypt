@@ -20,7 +20,6 @@
 typedef struct _auth_request_t {
     mongocrypt_kms_ctx_t kms;
     bool returned;
-    bool initialized;
     char *kmsid;
 } auth_request_t;
 
@@ -619,7 +618,6 @@ bool _mongocrypt_key_broker_add_doc(_mongocrypt_key_broker_t *kb,
                     goto done;
                 }
                 ar->kmsid = bson_strdup(key_doc->kek.kmsid);
-                ar->initialized = true;
                 mc_mapof_kmsid_to_authrequest_put(kb->auth_requests, ar);
             }
         } else {
@@ -656,7 +654,6 @@ bool _mongocrypt_key_broker_add_doc(_mongocrypt_key_broker_t *kb,
                     goto done;
                 }
                 ar->kmsid = bson_strdup(key_doc->kek.kmsid);
-                ar->initialized = true;
                 mc_mapof_kmsid_to_authrequest_put(kb->auth_requests, ar);
             }
         } else {
@@ -830,7 +827,6 @@ bool _mongocrypt_key_broker_kms_done(_mongocrypt_key_broker_t *kb, _mongocrypt_o
         // Apply tokens from oauth responses to oauth token cache.
         for (size_t i = 0; i < mc_mapof_kmsid_to_authrequest_len(kb->auth_requests); i++) {
             auth_request_t *ar = mc_mapof_kmsid_to_authrequest_at(kb->auth_requests, i);
-            BSON_ASSERT(ar->initialized);
 
             if (!_mongocrypt_kms_ctx_result(&ar->kms, &oauth_response_buf)) {
                 mongocrypt_kms_ctx_status(&ar->kms, kb->status);
