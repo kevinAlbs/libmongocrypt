@@ -481,12 +481,6 @@ bool _mongocrypt_key_broker_add_doc(_mongocrypt_key_broker_t *kb,
 
     /* Check that the returned key doc's provider matches. */
     kek_provider = key_doc->kek.kms_provider;
-    if (0 == ((int)kek_provider & kms_providers->configured_providers)) {
-        mongocrypt_status_t *status = kb->status;
-        CLIENT_ERR("client not configured with KMS provider necessary to decrypt: %s", key_doc->kek.kmsid);
-        _key_broker_fail(kb);
-        goto done;
-    }
 
     mc_kms_creds_t kc;
     if (!_mongocrypt_opts_kms_providers_lookup(kms_providers, key_doc->kek.kmsid, &kc)) {
