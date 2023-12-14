@@ -636,7 +636,7 @@ bool _mongocrypt_key_broker_add_doc(_mongocrypt_key_broker_t *kb,
         if (NULL != kc.value.gcp.access_token) {
             access_token = bson_strdup(kc.value.gcp.access_token);
         } else {
-            access_token = _mongocrypt_cache_oauth_get(kb->crypt->cache_oauth_gcp);
+            access_token = mc_mapof_kmsid_to_token_get_token(kb->crypt->cache_oauth, key_doc->kek.kmsid);
         }
         if (!access_token) {
             key_returned->needs_auth = true;
