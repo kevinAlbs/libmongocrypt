@@ -95,10 +95,10 @@ static void test_configuring_named_kms_providers(_mongocrypt_tester_t *tester) {
             TEST_BSON(BSON_STR({
                           "local" : {"key" : "%s"},
                           "azure:name1" : {
-                              "tenantId" : "placeholder-tenantId",
-                              "clientId" : "placeholder-clientId",
-                              "clientSecret" : "placeholder-clientSecret",
-                              "identityPlatformEndpoint" : "placeholder-identityPlatformEndpoint.com"
+                              "tenantId" : "placeholder1-tenantId",
+                              "clientId" : "placeholder1-clientId",
+                              "clientSecret" : "placeholder1-clientSecret",
+                              "identityPlatformEndpoint" : "placeholder1-identityPlatformEndpoint.com"
                           }
                       }),
                       LOCAL_KEK1_BASE64);
