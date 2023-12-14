@@ -141,6 +141,7 @@ void mc_mapof_kmsid_to_token_destroy(mc_mapof_kmsid_to_token_t *k2t) {
         _mongocrypt_cache_oauth_destroy(k2te.cache);
     }
     _mc_array_destroy(&k2t->entries);
+    _mongocrypt_mutex_cleanup(&k2t->mutex);
     bson_free(k2t);
 }
 
