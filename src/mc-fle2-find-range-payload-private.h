@@ -32,7 +32,7 @@
 typedef struct {
     mc_array_t edgeFindTokenSetArray;           // g
     _mongocrypt_buffer_t serverEncryptionToken; // e
-    int64_t maxContentionCounter;               // cm
+    int64_t maxContentionFactor;                // cm
 } mc_FLE2FindRangePayloadEdgesInfo_t;
 
 /**
