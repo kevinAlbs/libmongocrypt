@@ -1,5 +1,5 @@
 Documents in this test data directory provide inputs and corresponding expected outputs for token derivation functions in libmongocrypt.
-Each document is a single-depth set of key value pairs. All values are 32 octet hexit string except `counter` which is numeric.
+Each document is a single-depth set of key value pairs. All values are 32 octet hexit string except `contentionFactor` which is numeric.
 
 [server.json](server.json) comes from [TEST(FLETokens, TestVectors)](https://github.com/mongodb/mongo/blob/master/src/mongo/crypto/fle_crypto_test.cpp).
 
@@ -7,7 +7,7 @@ Each document is a single-depth set of key value pairs. All values are 32 octet 
 | ----- | ----------- |
 | root | The base key from which all other tokens are derived. |
 | value | Data used in `DerivedFromData` tokens. |
-| counter | Data used in `DerivedFromDataAndCounter` tokens. |
+| contentionFactor | Data used in `DerivedFromDataAndContentionFactor` tokens. |
 | collectionsLevel1Token | HMAC(root, 1) |
 | serverTokenDerivationLevel1Token | HMAC(root, 2) |
 | serverDataEncryptionLevel1Token | HMAC(root, 3) |
@@ -18,9 +18,9 @@ Each document is a single-depth set of key value pairs. All values are 32 octet 
 | EDCDerivedFromDataToken | HMAC(EDCToken, value) |
 | ESCDerivedFromDataToken | HMAC(ESCToken, value) |
 | ECCDerivedFromDataToken | HMAC(ECCToken, value) |
-| EDCDerivedFromDataTokenAndContentionFactor| HMAC(EDCDerivedFromDataToken, counter) |
-| ESCDerivedFromDataTokenAndContentionFactor| HMAC(ESCDerivedFromDataToken, counter) |
-| ECCDerivedFromDataTokenAndContentionFactor| HMAC(ECCDerivedFromDataToken, counter) |
+| EDCDerivedFromDataTokenAndContentionFactor| HMAC(EDCDerivedFromDataToken, contentionFactor) |
+| ESCDerivedFromDataTokenAndContentionFactor| HMAC(ESCDerivedFromDataToken, contentionFactor) |
+| ECCDerivedFromDataTokenAndContentionFactor| HMAC(ECCDerivedFromDataToken, contentionFactor) |
 | serverDerivedFromDataToken | HMAC(serverTokenDerivationLevel1Token, value) |
 | serverCountAndContentionFactorEncryptionToken | HMAC(serverDerivedFromDataToken, 1) |
 | serverZerosEncryptionToken | HMAC(serverDerivedFromDataToken, 2) |
