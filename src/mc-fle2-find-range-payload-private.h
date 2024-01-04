@@ -49,7 +49,7 @@ typedef struct {
  * bson is a BSON document of this form:
  * g: array<EdgeFindTokenSet> // Array of Edges
  * e: <binary> // ServerDataEncryptionLevel1Token
- * cm: <int64> // Queryable Encryption max counter
+ * cm: <int64> // Queryable Encryption max contention factor
  */
 typedef struct {
     struct {

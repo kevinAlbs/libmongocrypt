@@ -1201,7 +1201,7 @@ fail:
 /**
  * Payload subtype 5: FLE2FindEqualityPayload
  *
- * {d: EDC, s: ESC, c: ECC, e: serverToken, cm: contentionCounter}
+ * {d: EDC, s: ESC, c: ECC, e: serverToken, cm: maxContentionFactor}
  */
 static bool _mongocrypt_fle2_placeholder_to_find_ciphertext_v1(_mongocrypt_key_broker_t *kb,
                                                                _mongocrypt_marking_t *marking,
@@ -1271,7 +1271,7 @@ fail:
  * Payload subtype 12: FLE2FindEqualityPayloadV2
  * Delegates to ..._find_ciphertext_v1 when crypt->opts.use_fle2_v2 == false.
  *
- * {d: EDC, s: ESC, l: serverDerivedFromDataToken, cm: contentionCounter}
+ * {d: EDC, s: ESC, l: serverDerivedFromDataToken, cm: maxContentionFactor}
  */
 static bool _mongocrypt_fle2_placeholder_to_find_ciphertext(_mongocrypt_key_broker_t *kb,
                                                             _mongocrypt_marking_t *marking,
@@ -1507,7 +1507,7 @@ mc_get_mincover_from_FLE2RangeFindSpec(mc_FLE2RangeFindSpec_t *findSpec, size_t 
 /**
  * Payload subtype 10: FLE2FindRangePayload
  *
- * {e: serverToken, cm: contentionCounter,
+ * {e: serverToken, cm: maxContentionFactor,
  *  g: [{d: EDC, s: ESC, c: ECC}, ...]}
  */
 static bool _mongocrypt_fle2_placeholder_to_find_ciphertextForRange_v1(_mongocrypt_key_broker_t *kb,
@@ -1541,7 +1541,7 @@ static bool _mongocrypt_fle2_placeholder_to_find_ciphertextForRange_v1(_mongocry
     }
 
     if (findSpec.edgesInfo.set) {
-        // cm := Queryable Encryption max counter
+        // cm := Queryable Encryption max contention factor
         payload.payload.value.maxContentionFactor = placeholder->maxContentionFactor;
 
         // e := ServerDataEncryptionLevel1Token
@@ -1642,7 +1642,7 @@ fail:
  * Delegates to ..._find_ciphertextForRange_v1
  *   when crypt->opts.use_fle2_v2 is false
  *
- * {cm: contentionCounter,
+ * {cm: maxContentionFactor,
  *  g: [{d: EDC, s: ESC, l: serverDerivedFromDataToken}, ...]}
  */
 static bool _mongocrypt_fle2_placeholder_to_find_ciphertextForRange(_mongocrypt_key_broker_t *kb,
@@ -1677,7 +1677,7 @@ static bool _mongocrypt_fle2_placeholder_to_find_ciphertextForRange(_mongocrypt_
     }
 
     if (findSpec.edgesInfo.set) {
-        // cm := Queryable Encryption max counter
+        // cm := Queryable Encryption max contention factor
         payload.payload.value.maxContentionFactor = placeholder->maxContentionFactor;
 
         // g:= array<EdgeFindTokenSet>
