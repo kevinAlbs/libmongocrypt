@@ -1000,6 +1000,15 @@ tasks:
       params:
         file: libmongocrypt/bindings/python/results.json
 
+- name: build-and-test-and-upload-with-earthly
+  commands:
+  - func: "fetch source"
+  - func: earthly
+    vars:
+      args: +build --save_install_to_host=true --env=${earthly_env}
+  - func: "tar and upload libmongocrypt libraries"
+  - func: "create packages and repos"
+
 pre:
   # Update the evergreen expansion to dynamically set the ${libmongocrypt_s3_suffix} and ${libmongocrypt_s3_suffix_copy} expansions.
   - command: "shell.exec"
@@ -1584,3 +1593,20 @@ buildvariants:
   tasks:
   - benchmark-java
   - benchmark-python
+
+- name: debian11-arm64-earthly
+  display_name: "Debian 11 arm64 (via Earthly)"
+  # Use an arm64 distro to match the intended target architecture.
+  run_on: ubuntu2204-arm64-small
+  expansions:
+    has_packages: true
+    packager_distro: debian11
+    packager_arch: arm64
+    # Tell earthly.sh to build for Debian 11.
+    earthly_env: deb11
+  tasks:
+  - build-and-test-and-upload-with-earthly
+  # TODO: uncomment to try publishing packages
+  # - name: publish-packages
+  #   distros:
+  #   - ubuntu2004-small
