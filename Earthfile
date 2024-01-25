@@ -376,7 +376,7 @@ build:
     RUN env USE_NINJA=1 bash libmongocrypt/.evergreen/build_all.sh
     ARG save_install_to_host=false
     IF $save_install_to_host
-        RUN echo "Saving install directory to host directory ../install"
-        SAVE ARTIFACT install AS LOCAL ../install
+        RUN echo "Saving install directory to host"
+        SAVE ARTIFACT install AS LOCAL install
     END
 

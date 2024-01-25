@@ -1016,6 +1016,11 @@ tasks:
   - func: earthly
     vars:
       args: +build --save_install_to_host=true --env=${earthly_env}
+  - command: "subprocess.exec"
+    params:
+      binary: bash
+      args:
+        - mv libmongocrypt/install .
   - func: "tar and upload libmongocrypt libraries"
   - func: "create packages and repos"
 
