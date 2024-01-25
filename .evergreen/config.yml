@@ -339,7 +339,17 @@ functions:
       params:
         shell: bash
         working_dir: ${working_dir|libmongocrypt}
-        script: bash ${workdir}/libmongocrypt/.evergreen/earthly.sh ${args}
+        script: |
+          echo "working_dir=${working_dir}"
+          echo "workdir=${workdir}"
+          echo "pwd=$(pwd)"
+          echo "ls ... begin"
+          ls
+          echo "ls ... end"
+          bash ${workdir}/libmongocrypt/.evergreen/earthly.sh ${args}
+          echo "ls ... begin"
+          ls
+          echo "ls ... end"
 
   lint-node-cpp:
     - command: "subprocess.exec"
