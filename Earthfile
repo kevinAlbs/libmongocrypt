@@ -361,6 +361,8 @@ check-format:
 #       compilation and reusing of configuration between builds. The build
 #       directory is NOT shared between different "--env" environments, only
 #       within a single environment.
+#   • --save_install_to_host={true,false} (default "false")
+#     · Save the install directory to the host.
 build:
     ARG env=u22
     FROM +env.$env
@@ -372,3 +374,9 @@ build:
         CACHE /s/libmongocrypt/cmake-build
     END
     RUN env USE_NINJA=1 bash libmongocrypt/.evergreen/build_all.sh
+    ARG save_install_to_host=false
+    IF $save_install_to_host
+        RUN echo "Saving install directory to host"
+        SAVE ARTIFACT install AS LOCAL install
+    END
+
