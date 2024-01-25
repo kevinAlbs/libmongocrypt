@@ -346,7 +346,9 @@ functions:
           echo "ls ... begin"
           ls
           echo "ls ... end"
-          bash ${workdir}/libmongocrypt/.evergreen/earthly.sh ${args}
+          # bash ${workdir}/libmongocrypt/.evergreen/earthly.sh ${args}
+          mkdir install
+          echo "foo" > install/foo.txt
           echo "ls ... begin"
           ls
           echo "ls ... end"
@@ -1020,7 +1022,16 @@ tasks:
     params:
       binary: bash
       args:
-        - mv libmongocrypt/install .
+        - -c
+        - |
+          echo "pwd=$(pwd)"
+          echo "ls ... begin"
+          ls
+          echo "ls ... begin"
+          echo "ls libmongocrypt ... begin"
+          ls libmongocrypt
+          echo "ls libmongocrypt ... begin"
+          mv libmongocrypt/install .
   - func: "tar and upload libmongocrypt libraries"
   - func: "create packages and repos"
 
