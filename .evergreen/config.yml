@@ -1067,11 +1067,8 @@ tasks:
         - -c
         - |
           set errexit
-          # Get expected install path for libmongocrypt.
-          . .evergreen/setup-env.sh
-          : ${MONGOCRYPT_INSTALL_PREFIX:?"expected MONGOCRYPT_INSTALL_PREFIX to be set"}
           # Move earthly install to expected path.
-          mv install/* "$MONGOCRYPT_INSTALL_PREFIX"
+          mv libmongocrypt/install/* ./install/
   - func: "tar and upload libmongocrypt libraries"
   - func: "create packages and repos"
 
