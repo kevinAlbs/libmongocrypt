@@ -853,11 +853,19 @@ tasks:
           cd ..
           # Get the current version of libmongocrypt.
           pkg_version="$(python etc/calc_release_version.py)"
-          CURATOR_RELEASE=${curator_release|"e0b5f66fc89ec0acddcd40ea5f447a8300ded2b9"}
-          curl -L -O http://boxes.10gen.com/build/curator/curator-dist-rhel70-$CURATOR_RELEASE.tar.gz
-          tar -zxvf curator-dist-rhel70-$CURATOR_RELEASE.tar.gz
-          ./curator version
-          ./curator repo submit --config etc/repo_config.yaml --distro ${packager_distro} --edition org --version $pkg_version --arch ${packager_arch} --service https://barque.corp.mongodb.com/ --packages https://mciuploads.s3.amazonaws.com/${project}/${build_variant}/${branch_name}/${libmongocrypt_s3_suffix}/libmongocrypt-distro-packages.tar.gz
+          # CURATOR_RELEASE=${curator_release|"e0b5f66fc89ec0acddcd40ea5f447a8300ded2b9"}
+          # curl -L -O http://boxes.10gen.com/build/curator/curator-dist-rhel70-$CURATOR_RELEASE.tar.gz
+          # tar -zxvf curator-dist-rhel70-$CURATOR_RELEASE.tar.gz
+          # ./curator version
+          # ./curator
+          
+          # Build a custom version of curator that logs the URL of failed uploads.
+          git clone git@github.com:kevinAlbs/curator.git --branch KEVINALBS.print_errors --depth=1
+          pushd curator
+          ./build.sh
+          CURATOR=$(pwd)/build/curator
+          popd # curator
+          $CURATOR repo submit --config etc/repo_config.yaml --distro ${packager_distro} --edition org --version $pkg_version --arch ${packager_arch} --service https://barque.corp.mongodb.com/ --packages https://mciuploads.s3.amazonaws.com/${project}/${build_variant}/${branch_name}/${libmongocrypt_s3_suffix}/libmongocrypt-distro-packages.tar.gz
 
 - name: windows-upload-check
   depends_on: build-and-test-and-upload
