@@ -346,10 +346,10 @@ functions:
           echo "ls ... begin"
           ls
           echo "ls ... end"
-          # bash ${workdir}/libmongocrypt/.evergreen/earthly.sh ${args}
-          mkdir install
-          mkdir install/libmongocrypt
-          echo "foo" > install/libmongocrypt/foo.txt
+          bash ${workdir}/libmongocrypt/.evergreen/earthly.sh ${args}
+          # mkdir install
+          # mkdir install/libmongocrypt
+          # echo "foo" > install/libmongocrypt/foo.txt
           echo "ls ... begin"
           ls
           echo "ls ... end"
