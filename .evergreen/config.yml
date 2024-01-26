@@ -340,19 +340,7 @@ functions:
         shell: bash
         working_dir: ${working_dir|libmongocrypt}
         script: |
-          echo "working_dir=${working_dir}"
-          echo "workdir=${workdir}"
-          echo "pwd=$(pwd)"
-          echo "ls ... begin"
-          ls
-          echo "ls ... end"
           bash ${workdir}/libmongocrypt/.evergreen/earthly.sh ${args}
-          # mkdir install
-          # mkdir install/libmongocrypt
-          # echo "foo" > install/libmongocrypt/foo.txt
-          echo "ls ... begin"
-          ls
-          echo "ls ... end"
 
   lint-node-cpp:
     - command: "subprocess.exec"
@@ -1025,14 +1013,12 @@ tasks:
       args:
         - -c
         - |
-          echo "pwd=$(pwd)"
-          echo "ls ... begin"
-          ls
-          echo "ls ... begin"
-          echo "ls libmongocrypt ... begin"
-          ls libmongocrypt
-          echo "ls libmongocrypt ... end"
-          mv libmongocrypt/install/* ./install/
+          set errexit
+          # Get expected install path for libmongocrypt.
+          . .evergreen/setup-env.sh
+          : ${MONGOCRYPT_INSTALL_PREFIX:?"expected MONGOCRYPT_INSTALL_PREFIX to be set"}
+          # Move earthly install to expected path.
+          mv install/* "$MONGOCRYPT_INSTALL_PREFIX"
   - func: "tar and upload libmongocrypt libraries"
   - func: "create packages and repos"
 
