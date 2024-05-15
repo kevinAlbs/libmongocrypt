@@ -1006,6 +1006,16 @@ tasks:
       params:
         file: libmongocrypt/bindings/python/results.json
 
+- name: upload-sbom
+  commands:
+    - func: "fetch source"
+    - func: "earthly"
+      vars:
+        args: >- # Fold into one line.
+          --secret silk_client_id=${silk_client_id}
+          --secret silk_client_secret=${silk_client_secret}
+          +sbom-upload
+
 pre:
   # Update the evergreen expansion to dynamically set the ${libmongocrypt_s3_suffix} and ${libmongocrypt_s3_suffix_copy} expansions.
   - command: "shell.exec"
@@ -1562,6 +1572,7 @@ buildvariants:
   tasks:
     - name: "upload-java"
     - name: "upload-all"
+    - name: "upload-sbom"
 - name: java-release
   display_name: Java Release
   run_on: ubuntu2004-small
