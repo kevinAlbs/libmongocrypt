@@ -1226,6 +1226,13 @@ static bool _mongocrypt_fle2_placeholder_to_insert_update_ciphertextForRange(_mo
         }
     }
 
+    // Include "range" payload fields introduced in SERVER-91889.
+    payload.sparsity = OPT_I64(placeholder->sparsity);
+    payload.precision = insertSpec.precision;
+    payload.trimFactor = insertSpec.trimFactor; // TODO: MONGOCRYPT-698 set `trimFactor` to computed value.
+    payload.indexMin = insertSpec.min;
+    payload.indexMax = insertSpec.max;
+
     {
         bson_t out;
         bson_init(&out);

@@ -20,6 +20,7 @@
 #include <bson/bson.h>
 
 #include "mc-array-private.h"
+#include "mc-optional-private.h"
 #include "mongocrypt-buffer-private.h"
 #include "mongocrypt-private.h"
 #include "mongocrypt.h"
@@ -45,7 +46,12 @@
  * e: <binary> // ServerDataEncryptionLevel1Token
  * l: <binary> // ServerDerivedFromDataToken
  * k: <int64> // Randomly sampled contention factor value
- * g: array<EdgeTokenSetV2> // Array of Edges
+ * g: array<EdgeTokenSetV2> // Array of Edges.
+ * sp: optional<int64> // Sparsity. Only included for "range" payloads.
+ * pn: optional<int32> // Precision. Only included for "range" payloads.
+ * tf: optional<int32> // Trim Factor. Only included for "range" payloads.
+ * mn: optional<any> // Index Min. Only included for "range" payloads.
+ * mx: optional<any> // Index Max. Only included for "range" payloads.
  *
  * p is the result of:
  * Encrypt(
@@ -72,6 +78,11 @@ typedef struct {
     _mongocrypt_buffer_t serverDerivedFromDataToken; // l
     int64_t contentionFactor;                        // k
     mc_array_t edgeTokenSetArray;                    // g
+    mc_optional_int64_t sparsity;                    // sp
+    mc_optional_uint32_t precision;                  // pn
+    mc_optional_uint32_t trimFactor;                 // tf
+    bson_iter_t indexMin;                            // mn
+    bson_iter_t indexMax;                            // mx
     _mongocrypt_buffer_t plaintext;
     _mongocrypt_buffer_t userKeyId;
 } mc_FLE2InsertUpdatePayloadV2_t;

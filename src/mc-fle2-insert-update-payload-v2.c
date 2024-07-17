@@ -257,6 +257,38 @@ bool mc_FLE2InsertUpdatePayloadV2_serializeForRange(const mc_FLE2InsertUpdatePay
         return false;
     }
 
+    if (use_range_v2) {
+        // Encode parameters that were used to generate the payload.
+        BSON_ASSERT(payload->sparsity.set);
+        if (!BSON_APPEND_INT64(out, "sp", payload->sparsity.value)) {
+            return false;
+        }
+
+        // Precision may be unset.
+        if (payload->precision.set) {
+            BSON_ASSERT(bson_in_range_int32_t_unsigned(payload->precision.value));
+            if (!BSON_APPEND_INT32(out, "pn", (int32_t)payload->precision.value)) {
+                return false;
+            }
+        }
+
+        BSON_ASSERT(payload->trimFactor.set);
+        BSON_ASSERT(bson_in_range_int32_t_unsigned(payload->trimFactor.value));
+        if (!BSON_APPEND_INT32(out, "tf", (int32_t)payload->trimFactor.value)) {
+            return false;
+        }
+
+        BSON_ASSERT(bson_iter_type(&payload->indexMin) != BSON_TYPE_EOD);
+        if (!BSON_APPEND_ITER(out, "mn", &payload->indexMin)) {
+            return false;
+        }
+
+        BSON_ASSERT(bson_iter_type(&payload->indexMax) != BSON_TYPE_EOD);
+        if (!BSON_APPEND_ITER(out, "mx", &payload->indexMax)) {
+            return false;
+        }
+    }
+
     return true;
 }
 
