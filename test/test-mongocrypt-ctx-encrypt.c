@@ -2169,7 +2169,7 @@ static void _test_encrypt_fle2_find_range_payload_decimal128_precision(_mongocry
 }
 #endif // MONGOCRYPT_HAVE_DECIMAL128_SUPPORT
 
-static mongocrypt_t *_crypt_with_rng(_test_rng_data_source *rng_source, bool use_v2) {
+static mongocrypt_t *_crypt_with_rng(_test_rng_data_source *rng_source, bool use_v2, bool use_range_v2) {
     mongocrypt_t *crypt;
     mongocrypt_binary_t *localkey;
     /* localkey_data is the KEK used to encrypt the keyMaterial
@@ -2194,7 +2194,12 @@ static mongocrypt_t *_crypt_with_rng(_test_rng_data_source *rng_source, bool use
     // TODO(MONGOCRYPT-572): This test uses the QEv1 protocol. Update this test for QEv2 or remove. Note: decrypting
     // QEv1 is still supported.
     ASSERT_OK(mongocrypt_setopt_fle2v2(crypt, use_v2), crypt);
-    ASSERT_OK(_mongocrypt_init_for_test(crypt), crypt);
+    if (use_range_v2) {
+        ASSERT_OK(mongocrypt_setopt_use_range_v2(crypt), crypt);
+        ASSERT_OK(mongocrypt_init(crypt), crypt);
+    } else {
+        ASSERT_OK(_mongocrypt_init_for_test(crypt), crypt);
+    }
     return crypt;
 }
 
@@ -2214,6 +2219,7 @@ typedef struct {
     const char *expect_init_error;
     bool is_expression;
     bool use_v2;
+    bool use_range_v2;
 } ee_testcase;
 
 static void ee_testcase_run(ee_testcase *tc) {
@@ -2224,12 +2230,15 @@ static void ee_testcase_run(ee_testcase *tc) {
     if (tc->rng_data.buf.len > 0) {
         // Use fixed data for random number generation to produce deterministic
         // results.
-        crypt = _crypt_with_rng(&tc->rng_data, tc->use_v2);
+        crypt = _crypt_with_rng(&tc->rng_data, tc->use_v2, tc->use_range_v2);
     } else {
         tester_mongocrypt_flags flags = TESTER_MONGOCRYPT_DEFAULT;
         // TODO(MONGOCRYPT-572): Remove tests cases for QEv1.
         if (!tc->use_v2) {
             flags |= TESTER_MONGOCRYPT_WITH_CRYPT_V1;
+        }
+        if (tc->use_range_v2) {
+            flags |= TESTER_MONGOCRYPT_WITH_RANGE_V2;
         }
         crypt = _mongocrypt_tester_mongocrypt(flags);
     }
@@ -2708,6 +2717,80 @@ static void _test_encrypt_fle2_explicit(_mongocrypt_tester_t *tester) {
                               "encrypted-payload-v2.json");
         tc.use_v2 = true;
         ee_testcase_run(&tc);
+    }
+
+    {
+        ee_testcase tc = {0};
+        tc.desc = "'range' sends crypto parameters";
+#include "./data/fle2-insert-rangev2-explicit/int32/RNG_DATA.h"
+        tc.rng_data = (_test_rng_data_source){.buf = {.data = (uint8_t *)RNG_DATA, .len = sizeof(RNG_DATA) - 1}};
+#undef RNG_DATA
+        tc.algorithm = MONGOCRYPT_ALGORITHM_RANGE_STR;
+        tc.user_key_id = &keyABC_id;
+        tc.index_key_id = &key123_id;
+        tc.contention_factor = OPT_I64(1);
+        tc.range_opts = TEST_FILE("./test/data/fle2-insert-rangev2-explicit/int32/rangeopts.json");
+        tc.msg = TEST_FILE("./test/data/fle2-insert-rangev2-explicit/int32/value-to-encrypt.json");
+        tc.keys_to_feed[0] = keyABC;
+        tc.keys_to_feed[1] = key123;
+        tc.expect = TEST_FILE("./test/data/fle2-insert-rangev2-explicit/int32/encrypted-payload-v2.json");
+        tc.use_v2 = true;       // Use QEv2 protocol.
+        tc.use_range_v2 = true; // Use RangeV2 protocol.
+        ee_testcase_run(&tc);
+        // Check the parameters are present in the final payload.
+        {
+            // The result is a BSON document wrapping the payload: { "v": <payload> }
+            bson_t result;
+            ASSERT(_mongocrypt_binary_to_bson(tc.expect, &result));
+            // Lookup the 'v' value.
+            bson_iter_t iter;
+            ASSERT(bson_iter_init_find(&iter, &result, "v"));
+            // The payload starts with an identifier byte, then the rest is BSON.
+            _mongocrypt_buffer_t buf;
+            ASSERT(_mongocrypt_buffer_from_binary_iter(&buf, &iter));
+            bson_t payload_bson;
+            ASSERT(bson_init_static(&payload_bson, buf.data + 1, buf.len - 1));
+            _assert_match_bson(&payload_bson,
+                               TMP_BSON(BSON_STR({"k" : 1, "sp" : 2, "tf" : 3, "mn" : 0, "mx" : 1234567})));
+        }
+    }
+
+    // TODO: this test depends on defaults applied in MONGOCRYPT-698.
+    {
+        ee_testcase tc = {0};
+        tc.desc = "'range' sends crypto parameters with correct defaults";
+#include "./data/fle2-insert-rangev2-explicit/int32/RNG_DATA.h"
+        tc.rng_data = (_test_rng_data_source){.buf = {.data = (uint8_t *)RNG_DATA, .len = sizeof(RNG_DATA) - 1}};
+#undef RNG_DATA
+        tc.algorithm = MONGOCRYPT_ALGORITHM_RANGE_STR;
+        tc.user_key_id = &keyABC_id;
+        tc.index_key_id = &key123_id;
+        tc.contention_factor = OPT_I64(1);
+        tc.range_opts =
+            TEST_BSON("{'min': 0, 'max': 1234567}"); // Expect defaults for `sparsity` (2), and `trimFactor` (6).
+        tc.msg = TEST_FILE("./test/data/fle2-insert-rangev2-explicit/int32-defaults/value-to-encrypt.json");
+        tc.keys_to_feed[0] = keyABC;
+        tc.keys_to_feed[1] = key123;
+        tc.expect = TEST_FILE("./test/data/fle2-insert-rangev2-explicit/int32-defaults/encrypted-payload-v2.json");
+        tc.use_v2 = true;       // Use QEv2 protocol.
+        tc.use_range_v2 = true; // Use RangeV2 protocol.
+        ee_testcase_run(&tc);
+        // Check the parameters are present in the final payload.
+        {
+            // The result is a BSON document wrapping the payload: { "v": <payload> }
+            bson_t result;
+            ASSERT(_mongocrypt_binary_to_bson(tc.expect, &result));
+            // Lookup the 'v' value.
+            bson_iter_t iter;
+            ASSERT(bson_iter_init_find(&iter, &result, "v"));
+            // The payload starts with an identifier byte, then the rest is BSON.
+            _mongocrypt_buffer_t buf;
+            ASSERT(_mongocrypt_buffer_from_binary_iter(&buf, &iter));
+            bson_t payload_bson;
+            ASSERT(bson_init_static(&payload_bson, buf.data + 1, buf.len - 1));
+            _assert_match_bson(&payload_bson,
+                               TMP_BSON(BSON_STR({"k" : 1, "sp" : 2, "tf" : 6, "mn" : 0, "mx" : 1234567})));
+        }
     }
 
     {
