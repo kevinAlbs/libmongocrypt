@@ -2755,7 +2755,6 @@ static void _test_encrypt_fle2_explicit(_mongocrypt_tester_t *tester) {
         }
     }
 
-    // TODO: this test depends on defaults applied in MONGOCRYPT-698.
     {
         ee_testcase tc = {0};
         tc.desc = "'range' sends crypto parameters with correct defaults";
@@ -2792,7 +2791,6 @@ static void _test_encrypt_fle2_explicit(_mongocrypt_tester_t *tester) {
                                TMP_BSON(BSON_STR({"k" : 1, "sp" : 2, "tf" : 6, "mn" : 0, "mx" : 1234567})));
         }
     }
-
     {
         ee_testcase tc = {0};
         tc.desc = "algorithm='Range' with sparsity=2 with int32";
@@ -5339,6 +5337,17 @@ static void _test_no_trimFactor(_mongocrypt_tester_t *tester) {
     }
 }
 
+// Test that the crypto parameters added in SERVER-91889 are sent.
+static void _test_sends_cryptoParams(_mongocrypt_tester_t *tester) {
+    TEST_ERROR("Not yet implemented");
+    // Test explicit insert.
+    // Test explicit insert with defaults.
+    // Test explicit find.
+    // Test explicit find with defaults.
+    // Test automatic insert.
+    // Test automatic find.
+}
+
 void _mongocrypt_tester_install_ctx_encrypt(_mongocrypt_tester_t *tester) {
     INSTALL_TEST(_test_explicit_encrypt_init);
     INSTALL_TEST(_test_encrypt_init);
@@ -5421,4 +5430,5 @@ void _mongocrypt_tester_install_ctx_encrypt(_mongocrypt_tester_t *tester) {
     INSTALL_TEST(_test_bulkWrite);
     INSTALL_TEST(_test_rangePreview_fails);
     INSTALL_TEST(_test_no_trimFactor);
+    INSTALL_TEST(_test_sends_cryptoParams);
 }
