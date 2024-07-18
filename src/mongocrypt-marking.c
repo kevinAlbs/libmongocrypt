@@ -1230,8 +1230,8 @@ static bool _mongocrypt_fle2_placeholder_to_insert_update_ciphertextForRange(_mo
     payload.sparsity = OPT_I64(placeholder->sparsity);
     payload.precision = insertSpec.precision;
     payload.trimFactor = OPT_U32(mc_edges_get_used_trimFactor(edges));
-    payload.indexMin = insertSpec.min;
-    payload.indexMax = insertSpec.max;
+    bson_value_copy(bson_iter_value(&insertSpec.min), &payload.indexMin);
+    bson_value_copy(bson_iter_value(&insertSpec.max), &payload.indexMax);
 
     {
         bson_t out;
