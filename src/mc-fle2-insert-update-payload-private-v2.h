@@ -46,7 +46,7 @@
  * e: <binary> // ServerDataEncryptionLevel1Token
  * l: <binary> // ServerDerivedFromDataToken
  * k: <int64> // Randomly sampled contention factor value
- * g: array<EdgeTokenSetV2> // Array of Edges.
+ * g: array<EdgeTokenSetV2> // Array of Edges. Only included for "range" payloads.
  * sp: optional<int64> // Sparsity. Only included for "range" payloads.
  * pn: optional<int32> // Precision. Only included for "range" payloads.
  * tf: optional<int32> // Trim Factor. Only included for "range" payloads.
