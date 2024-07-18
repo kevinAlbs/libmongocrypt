@@ -2721,78 +2721,6 @@ static void _test_encrypt_fle2_explicit(_mongocrypt_tester_t *tester) {
 
     {
         ee_testcase tc = {0};
-        tc.desc = "'range' sends crypto parameters";
-#include "./data/fle2-insert-rangev2-explicit/int32/RNG_DATA.h"
-        tc.rng_data = (_test_rng_data_source){.buf = {.data = (uint8_t *)RNG_DATA, .len = sizeof(RNG_DATA) - 1}};
-#undef RNG_DATA
-        tc.algorithm = MONGOCRYPT_ALGORITHM_RANGE_STR;
-        tc.user_key_id = &keyABC_id;
-        tc.index_key_id = &key123_id;
-        tc.contention_factor = OPT_I64(1);
-        tc.range_opts = TEST_FILE("./test/data/fle2-insert-rangev2-explicit/int32/rangeopts.json");
-        tc.msg = TEST_FILE("./test/data/fle2-insert-rangev2-explicit/int32/value-to-encrypt.json");
-        tc.keys_to_feed[0] = keyABC;
-        tc.keys_to_feed[1] = key123;
-        tc.expect = TEST_FILE("./test/data/fle2-insert-rangev2-explicit/int32/encrypted-payload-v2.json");
-        tc.use_v2 = true;       // Use QEv2 protocol.
-        tc.use_range_v2 = true; // Use RangeV2 protocol.
-        ee_testcase_run(&tc);
-        // Check the parameters are present in the final payload.
-        {
-            // The result is a BSON document wrapping the payload: { "v": <payload> }
-            bson_t result;
-            ASSERT(_mongocrypt_binary_to_bson(tc.expect, &result));
-            // Lookup the 'v' value.
-            bson_iter_t iter;
-            ASSERT(bson_iter_init_find(&iter, &result, "v"));
-            // The payload starts with an identifier byte, then the rest is BSON.
-            _mongocrypt_buffer_t buf;
-            ASSERT(_mongocrypt_buffer_from_binary_iter(&buf, &iter));
-            bson_t payload_bson;
-            ASSERT(bson_init_static(&payload_bson, buf.data + 1, buf.len - 1));
-            _assert_match_bson(&payload_bson,
-                               TMP_BSON(BSON_STR({"k" : 1, "sp" : 2, "tf" : 3, "mn" : 0, "mx" : 1234567})));
-        }
-    }
-
-    {
-        ee_testcase tc = {0};
-        tc.desc = "'range' sends crypto parameters with correct defaults";
-#include "./data/fle2-insert-rangev2-explicit/int32/RNG_DATA.h"
-        tc.rng_data = (_test_rng_data_source){.buf = {.data = (uint8_t *)RNG_DATA, .len = sizeof(RNG_DATA) - 1}};
-#undef RNG_DATA
-        tc.algorithm = MONGOCRYPT_ALGORITHM_RANGE_STR;
-        tc.user_key_id = &keyABC_id;
-        tc.index_key_id = &key123_id;
-        tc.contention_factor = OPT_I64(1);
-        tc.range_opts =
-            TEST_BSON("{'min': 0, 'max': 1234567}"); // Expect defaults for `sparsity` (2), and `trimFactor` (6).
-        tc.msg = TEST_FILE("./test/data/fle2-insert-rangev2-explicit/int32-defaults/value-to-encrypt.json");
-        tc.keys_to_feed[0] = keyABC;
-        tc.keys_to_feed[1] = key123;
-        tc.expect = TEST_FILE("./test/data/fle2-insert-rangev2-explicit/int32-defaults/encrypted-payload-v2.json");
-        tc.use_v2 = true;       // Use QEv2 protocol.
-        tc.use_range_v2 = true; // Use RangeV2 protocol.
-        ee_testcase_run(&tc);
-        // Check the parameters are present in the final payload.
-        {
-            // The result is a BSON document wrapping the payload: { "v": <payload> }
-            bson_t result;
-            ASSERT(_mongocrypt_binary_to_bson(tc.expect, &result));
-            // Lookup the 'v' value.
-            bson_iter_t iter;
-            ASSERT(bson_iter_init_find(&iter, &result, "v"));
-            // The payload starts with an identifier byte, then the rest is BSON.
-            _mongocrypt_buffer_t buf;
-            ASSERT(_mongocrypt_buffer_from_binary_iter(&buf, &iter));
-            bson_t payload_bson;
-            ASSERT(bson_init_static(&payload_bson, buf.data + 1, buf.len - 1));
-            _assert_match_bson(&payload_bson,
-                               TMP_BSON(BSON_STR({"k" : 1, "sp" : 2, "tf" : 6, "mn" : 0, "mx" : 1234567})));
-        }
-    }
-    {
-        ee_testcase tc = {0};
         tc.desc = "algorithm='Range' with sparsity=2 with int32";
 #include "./data/fle2-insert-range-explicit/sparsity-2/RNG_DATA.h"
         tc.rng_data = (_test_rng_data_source){.buf = {.data = (uint8_t *)RNG_DATA, .len = sizeof(RNG_DATA) - 1}};
@@ -5220,11 +5148,6 @@ typedef struct {
 } autoencryption_test;
 
 static void autoencryption_test_run(autoencryption_test *aet) {
-    if (!_aes_ctr_is_supported_by_os) {
-        printf("Common Crypto with no CTR support detected. Skipping.");
-        return;
-    }
-
     printf("  auto_encryption test: '%s' ... begin\n", aet->desc);
 
     // Reset global counter for the `payloadId` to produce deterministic payloads.
@@ -5337,15 +5260,103 @@ static void _test_no_trimFactor(_mongocrypt_tester_t *tester) {
     }
 }
 
-// Test that the crypto parameters added in SERVER-91889 are sent.
-static void _test_sends_cryptoParams(_mongocrypt_tester_t *tester) {
-    TEST_ERROR("Not yet implemented");
-    // Test explicit insert.
+// Test that the crypto parameters added in SERVER-91889 are sent for "range" payloads.
+static void _test_range_sends_cryptoParams(_mongocrypt_tester_t *tester) {
+    if (!_aes_ctr_is_supported_by_os) {
+        printf("Common Crypto with no CTR support detected. Skipping.");
+        return;
+    }
+
+    // Set up key data used for test.
+    _mongocrypt_buffer_t keyABC_id;
+    _mongocrypt_buffer_t key123_id;
+    _mongocrypt_buffer_copy_from_hex(&keyABC_id, "ABCDEFAB123498761234123456789012");
+    _mongocrypt_buffer_copy_from_hex(&key123_id, "12345678123498761234123456789012");
+    mongocrypt_binary_t *keyABC = TEST_FILE("./test/data/keys/ABCDEFAB123498761234123456789012-local-document.json");
+    mongocrypt_binary_t *key123 = TEST_FILE("./test/data/keys/12345678123498761234123456789012-local-document.json");
+
     // Test explicit insert with defaults.
+    {
+        ee_testcase tc = {0};
+        tc.desc = "'range' sends crypto parameters with correct defaults";
+#include "./data/fle2-insert-rangev2-explicit/int32-defaults/RNG_DATA.h"
+        tc.rng_data = (_test_rng_data_source){.buf = {.data = (uint8_t *)RNG_DATA, .len = sizeof(RNG_DATA) - 1}};
+#undef RNG_DATA
+        tc.algorithm = MONGOCRYPT_ALGORITHM_RANGE_STR;
+        tc.user_key_id = &keyABC_id;
+        tc.index_key_id = &key123_id;
+        tc.contention_factor = OPT_I64(1);
+        tc.range_opts =
+            TEST_BSON("{'min': 0, 'max': 1234567}"); // Use defaults for `sparsity` (2), and `trimFactor` (6).
+        tc.msg = TEST_FILE("./test/data/fle2-insert-rangev2-explicit/int32-defaults/value-to-encrypt.json");
+        tc.keys_to_feed[0] = keyABC;
+        tc.keys_to_feed[1] = key123;
+        tc.expect = TEST_FILE("./test/data/fle2-insert-rangev2-explicit/int32-defaults/encrypted-payload-v2.json");
+        tc.use_v2 = true;       // Use QEv2 protocol.
+        tc.use_range_v2 = true; // Use RangeV2 protocol.
+        ee_testcase_run(&tc);
+        // Check the parameters are present in the final payload.
+        {
+            // The result is a BSON document wrapping the payload: { "v": <payload> }
+            bson_t result;
+            ASSERT(_mongocrypt_binary_to_bson(tc.expect, &result));
+            // Lookup the 'v' value.
+            bson_iter_t iter;
+            ASSERT(bson_iter_init_find(&iter, &result, "v"));
+            // The payload starts with an identifier byte, then the rest is BSON.
+            _mongocrypt_buffer_t buf;
+            ASSERT(_mongocrypt_buffer_from_binary_iter(&buf, &iter));
+            bson_t payload_bson;
+            ASSERT(bson_init_static(&payload_bson, buf.data + 1, buf.len - 1));
+            _assert_match_bson(&payload_bson,
+                               TMP_BSON(BSON_STR({"k" : 1, "sp" : 2, "tf" : 6, "mn" : 0, "mx" : 1234567})));
+        }
+    }
+
+    // Test explicit insert.
+    {
+        ee_testcase tc = {0};
+        tc.desc = "'range' sends crypto parameters";
+#include "./data/fle2-insert-rangev2-explicit/int32/RNG_DATA.h"
+        tc.rng_data = (_test_rng_data_source){.buf = {.data = (uint8_t *)RNG_DATA, .len = sizeof(RNG_DATA) - 1}};
+#undef RNG_DATA
+        tc.algorithm = MONGOCRYPT_ALGORITHM_RANGE_STR;
+        tc.user_key_id = &keyABC_id;
+        tc.index_key_id = &key123_id;
+        tc.contention_factor = OPT_I64(1);
+        tc.range_opts = TEST_FILE("./test/data/fle2-insert-rangev2-explicit/int32/rangeopts.json");
+        tc.msg = TEST_FILE("./test/data/fle2-insert-rangev2-explicit/int32/value-to-encrypt.json");
+        tc.keys_to_feed[0] = keyABC;
+        tc.keys_to_feed[1] = key123;
+        tc.expect = TEST_FILE("./test/data/fle2-insert-rangev2-explicit/int32/encrypted-payload-v2.json");
+        tc.use_v2 = true;       // Use QEv2 protocol.
+        tc.use_range_v2 = true; // Use RangeV2 protocol.
+        ee_testcase_run(&tc);
+        // Check the parameters are present in the final payload.
+        {
+            // The result is a BSON document wrapping the payload: { "v": <payload> }
+            bson_t result;
+            ASSERT(_mongocrypt_binary_to_bson(tc.expect, &result));
+            // Lookup the 'v' value.
+            bson_iter_t iter;
+            ASSERT(bson_iter_init_find(&iter, &result, "v"));
+            // The payload starts with an identifier byte, then the rest is BSON.
+            _mongocrypt_buffer_t buf;
+            ASSERT(_mongocrypt_buffer_from_binary_iter(&buf, &iter));
+            bson_t payload_bson;
+            ASSERT(bson_init_static(&payload_bson, buf.data + 1, buf.len - 1));
+            _assert_match_bson(&payload_bson,
+                               TMP_BSON(BSON_STR({"k" : 1, "sp" : 2, "tf" : 3, "mn" : 0, "mx" : 1234567})));
+        }
+    }
+
     // Test explicit find.
     // Test explicit find with defaults.
     // Test automatic insert.
     // Test automatic find.
+
+    _mongocrypt_buffer_cleanup(&key123_id);
+    _mongocrypt_buffer_cleanup(&keyABC_id);
 }
 
 void _mongocrypt_tester_install_ctx_encrypt(_mongocrypt_tester_t *tester) {
@@ -5431,4 +5442,5 @@ void _mongocrypt_tester_install_ctx_encrypt(_mongocrypt_tester_t *tester) {
     INSTALL_TEST(_test_rangePreview_fails);
     INSTALL_TEST(_test_no_trimFactor);
     INSTALL_TEST(_test_sends_cryptoParams);
+    INSTALL_TEST(_test_range_sends_cryptoParams);
 }
