@@ -170,12 +170,13 @@ static void _test_mc_FLE2InsertUpdatePayloadV2_decrypt(_mongocrypt_tester_t *tes
 static void _test_mc_FLE2InsertUpdatePayloadV2_includes_crypto_params(_mongocrypt_tester_t *tester) {
     mc_FLE2InsertUpdatePayloadV2_t payload;
     mc_FLE2InsertUpdatePayloadV2_init(&payload);
-    bson_t *tmp = TMP_BSON(BSON_STR({"indexMin" : 4, "indexMax" : 5})); // Temporary BSON to store index min/max.
     payload.sparsity = OPT_I64(1);
     payload.precision = OPT_U32(2);
     payload.trimFactor = OPT_U32(3);
-    bson_iter_init_find(&payload.indexMin, tmp, "indexMin");
-    bson_iter_init_find(&payload.indexMax, tmp, "indexMax");
+    bson_value_t indexMin = {.value.v_int32 = 4, .value_type = BSON_TYPE_INT32};
+    bson_value_copy(&indexMin, &payload.indexMin);
+    bson_value_t indexMax = {.value.v_int32 = 5, .value_type = BSON_TYPE_INT32};
+    bson_value_copy(&indexMax, &payload.indexMax);
 
     // Test fields from SERVER-91889 are included in "range" payload.
     {

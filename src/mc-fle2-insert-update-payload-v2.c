@@ -53,6 +53,8 @@ void mc_FLE2InsertUpdatePayloadV2_cleanup(mc_FLE2InsertUpdatePayloadV2_t *payloa
         mc_EdgeTokenSetV2_cleanup(&entry);
     }
     _mc_array_destroy(&payload->edgeTokenSetArray);
+    bson_value_destroy(&payload->indexMin);
+    bson_value_destroy(&payload->indexMax);
 }
 
 #define IF_FIELD(Name)                                                                                                 \
@@ -278,13 +280,13 @@ bool mc_FLE2InsertUpdatePayloadV2_serializeForRange(const mc_FLE2InsertUpdatePay
             return false;
         }
 
-        BSON_ASSERT(bson_iter_type(&payload->indexMin) != BSON_TYPE_EOD);
-        if (!BSON_APPEND_ITER(out, "mn", &payload->indexMin)) {
+        BSON_ASSERT(payload->indexMin.value_type != BSON_TYPE_EOD);
+        if (!BSON_APPEND_VALUE(out, "mn", &payload->indexMin)) {
             return false;
         }
 
-        BSON_ASSERT(bson_iter_type(&payload->indexMax) != BSON_TYPE_EOD);
-        if (!BSON_APPEND_ITER(out, "mx", &payload->indexMax)) {
+        BSON_ASSERT(payload->indexMax.value_type != BSON_TYPE_EOD);
+        if (!BSON_APPEND_VALUE(out, "mx", &payload->indexMax)) {
             return false;
         }
     }

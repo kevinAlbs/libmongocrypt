@@ -81,8 +81,8 @@ typedef struct {
     mc_optional_int64_t sparsity;                    // sp
     mc_optional_uint32_t precision;                  // pn
     mc_optional_uint32_t trimFactor;                 // tf
-    bson_iter_t indexMin;                            // mn
-    bson_iter_t indexMax;                            // mx
+    bson_value_t indexMin;                           // mn
+    bson_value_t indexMax;                           // mx
     _mongocrypt_buffer_t plaintext;
     _mongocrypt_buffer_t userKeyId;
 } mc_FLE2InsertUpdatePayloadV2_t;
