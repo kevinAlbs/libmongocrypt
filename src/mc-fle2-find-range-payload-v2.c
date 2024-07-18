@@ -53,7 +53,7 @@ void mc_FLE2FindRangePayloadV2_cleanup(mc_FLE2FindRangePayloadV2_t *payload) {
         return false;                                                                                                  \
     }
 
-bool mc_FLE2FindRangePayloadV2_serialize(const mc_FLE2FindRangePayloadV2_t *payload, bson_t *out) {
+bool mc_FLE2FindRangePayloadV2_serialize(const mc_FLE2FindRangePayloadV2_t *payload, bson_t *out, bool use_range_v2) {
     BSON_ASSERT_PARAM(out);
     BSON_ASSERT_PARAM(payload);
 
