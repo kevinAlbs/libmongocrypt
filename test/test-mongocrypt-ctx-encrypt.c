@@ -5354,8 +5354,36 @@ static void _test_range_sends_cryptoParams(_mongocrypt_tester_t *tester) {
         }
     }
 
-    // Test explicit find.
     // Test explicit find with defaults.
+    {
+        ee_testcase tc = {0};
+        tc.desc = "'range' sends crypto parameters for find with correct defaults";
+        tc.algorithm = MONGOCRYPT_ALGORITHM_RANGE_STR;
+        tc.query_type = MONGOCRYPT_QUERY_TYPE_RANGE_STR;
+        tc.is_expression = true;
+        tc.user_key_id = &keyABC_id;
+        tc.index_key_id = &key123_id;
+        tc.contention_factor = OPT_I64(1);
+        tc.range_opts =
+            TEST_BSON("{'min': 0, 'max': 1234567}"); // Use defaults for `sparsity` (2), and `trimFactor` (6).
+        tc.msg = TEST_FILE("./test/data/fle2-find-rangev2-explicit/int32-defaults/value-to-encrypt.json");
+        tc.keys_to_feed[0] = keyABC;
+        tc.keys_to_feed[1] = key123;
+        tc.expect = TEST_FILE("./test/data/fle2-find-rangev2-explicit/int32-defaults/encrypted-payload-v2.json");
+        tc.use_v2 = true;       // Use QEv2 protocol.
+        tc.use_range_v2 = true; // Use RangeV2 protocol.
+        ee_testcase_run(&tc);
+        // Check the parameters are present in the final payload.
+        {
+            bson_t payload_bson;
+            lookup_payload_bson(tc.expect, "v.$and.0.age.$gte", &payload_bson);
+            _assert_match_bson(
+                &payload_bson,
+                TMP_BSON(BSON_STR({"payload" : {"cm" : 1}, "sp" : 2, "tf" : 6, "mn" : 0, "mx" : 1234567})));
+        }
+    }
+
+    // Test explicit find.
     // Test automatic insert.
     // Test automatic find.
 
