@@ -5300,7 +5300,7 @@ static void _test_range_sends_cryptoParams(_mongocrypt_tester_t *tester) {
     // Test explicit insert with defaults.
     {
         ee_testcase tc = {0};
-        tc.desc = "'range' sends crypto parameters with correct defaults";
+        tc.desc = "'range' sends crypto parameters for insert with correct defaults";
 #include "./data/fle2-insert-rangev2-explicit/int32-defaults/RNG_DATA.h"
         tc.rng_data = (_test_rng_data_source){.buf = {.data = (uint8_t *)RNG_DATA, .len = sizeof(RNG_DATA) - 1}};
 #undef RNG_DATA
@@ -5329,7 +5329,7 @@ static void _test_range_sends_cryptoParams(_mongocrypt_tester_t *tester) {
     // Test explicit insert.
     {
         ee_testcase tc = {0};
-        tc.desc = "'range' sends crypto parameters";
+        tc.desc = "'range' sends crypto parameters for insert";
 #include "./data/fle2-insert-rangev2-explicit/int32/RNG_DATA.h"
         tc.rng_data = (_test_rng_data_source){.buf = {.data = (uint8_t *)RNG_DATA, .len = sizeof(RNG_DATA) - 1}};
 #undef RNG_DATA
