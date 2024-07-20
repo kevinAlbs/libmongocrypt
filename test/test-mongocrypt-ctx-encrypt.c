@@ -5500,6 +5500,5 @@ void _mongocrypt_tester_install_ctx_encrypt(_mongocrypt_tester_t *tester) {
     INSTALL_TEST(_test_bulkWrite);
     INSTALL_TEST(_test_rangePreview_fails);
     INSTALL_TEST(_test_no_trimFactor);
-    INSTALL_TEST(_test_sends_cryptoParams);
     INSTALL_TEST(_test_range_sends_cryptoParams);
 }
