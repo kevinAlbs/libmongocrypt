@@ -45,8 +45,12 @@ typedef struct {
  * } FLE2FindRangePayloadV2;
  *
  * bson is a BSON document of this form:
- * g: array<EdgeFindTokenSetV2> // Array of Edges
- * cm: <int64> // Queryable Encryption max counter
+ * payload: <document>
+ *  g: array<EdgeFindTokenSetV2> // Array of Edges
+ *  cm: <int64> // Queryable Encryption max counter
+ * payloadId: <int32> // Payload ID.
+ * firstOperator: <int32>
+ * secondOperator: <int32>
  * sp: optional<int64> // Sparsity.
  * pn: optional<int32> // Precision.
  * tf: optional<int32> // Trim Factor.
