@@ -269,7 +269,9 @@ bool mc_FLE2InsertUpdatePayloadV2_serialize(const mc_FLE2InsertUpdatePayloadV2_t
     return true;
 }
 
-bool mc_FLE2InsertUpdatePayloadV2_serializeForRange(const mc_FLE2InsertUpdatePayloadV2_t *payload, bson_t *out) {
+bool mc_FLE2InsertUpdatePayloadV2_serializeForRange(const mc_FLE2InsertUpdatePayloadV2_t *payload,
+                                                    bson_t *out,
+                                                    bool use_range_v2) {
     BSON_ASSERT_PARAM(out);
     BSON_ASSERT_PARAM(payload);
 
