@@ -5260,6 +5260,28 @@ static void _test_no_trimFactor(_mongocrypt_tester_t *tester) {
     }
 }
 
+// `lookup_payload_bson` looks up a payload from the BSON document `result` at path `path`.
+// The BSON portion of the payload is parsed into `payload_bson`.
+static void lookup_payload_bson(mongocrypt_binary_t *result, char *path, bson_t *payload_bson) {
+    bson_t result_bson;
+    ASSERT(_mongocrypt_binary_to_bson(result, &result_bson));
+
+    // Iterate to the path.
+    bson_iter_t iter;
+    ASSERT(bson_iter_init(&iter, &result_bson));
+    if (!bson_iter_find_descendant(&iter, path, &iter)) {
+        TEST_ERROR("Unable to find path '%s'. Got: %s", path, tmp_json(&result_bson));
+    }
+
+    _mongocrypt_buffer_t buf;
+    ASSERT(_mongocrypt_buffer_from_binary_iter(&buf, &iter));
+    ASSERT_CMPINT((int)buf.subtype, ==, (int)BSON_SUBTYPE_ENCRYPTED);
+
+    // Expect a payload to start with an identifier byte. Expect the remainder to be BSON.
+    ASSERT_CMPUINT32(buf.len, >, 0);
+    ASSERT(bson_init_static(payload_bson, buf.data + 1, buf.len - 1));
+}
+
 // Test that the crypto parameters added in SERVER-91889 are sent for "range" payloads.
 static void _test_range_sends_cryptoParams(_mongocrypt_tester_t *tester) {
     if (!_aes_ctr_is_supported_by_os) {
@@ -5297,17 +5319,8 @@ static void _test_range_sends_cryptoParams(_mongocrypt_tester_t *tester) {
         ee_testcase_run(&tc);
         // Check the parameters are present in the final payload.
         {
-            // The result is a BSON document wrapping the payload: { "v": <payload> }
-            bson_t result;
-            ASSERT(_mongocrypt_binary_to_bson(tc.expect, &result));
-            // Lookup the 'v' value.
-            bson_iter_t iter;
-            ASSERT(bson_iter_init_find(&iter, &result, "v"));
-            // The payload starts with an identifier byte, then the rest is BSON.
-            _mongocrypt_buffer_t buf;
-            ASSERT(_mongocrypt_buffer_from_binary_iter(&buf, &iter));
             bson_t payload_bson;
-            ASSERT(bson_init_static(&payload_bson, buf.data + 1, buf.len - 1));
+            lookup_payload_bson(tc.expect, "v", &payload_bson);
             _assert_match_bson(&payload_bson,
                                TMP_BSON(BSON_STR({"k" : 1, "sp" : 2, "tf" : 6, "mn" : 0, "mx" : 1234567})));
         }
@@ -5334,17 +5347,8 @@ static void _test_range_sends_cryptoParams(_mongocrypt_tester_t *tester) {
         ee_testcase_run(&tc);
         // Check the parameters are present in the final payload.
         {
-            // The result is a BSON document wrapping the payload: { "v": <payload> }
-            bson_t result;
-            ASSERT(_mongocrypt_binary_to_bson(tc.expect, &result));
-            // Lookup the 'v' value.
-            bson_iter_t iter;
-            ASSERT(bson_iter_init_find(&iter, &result, "v"));
-            // The payload starts with an identifier byte, then the rest is BSON.
-            _mongocrypt_buffer_t buf;
-            ASSERT(_mongocrypt_buffer_from_binary_iter(&buf, &iter));
             bson_t payload_bson;
-            ASSERT(bson_init_static(&payload_bson, buf.data + 1, buf.len - 1));
+            lookup_payload_bson(tc.expect, "v", &payload_bson);
             _assert_match_bson(&payload_bson,
                                TMP_BSON(BSON_STR({"k" : 1, "sp" : 2, "tf" : 3, "mn" : 0, "mx" : 1234567})));
         }
