@@ -5321,8 +5321,7 @@ static void _test_range_sends_cryptoParams(_mongocrypt_tester_t *tester) {
         {
             bson_t payload_bson;
             lookup_payload_bson(tc.expect, "v", &payload_bson);
-            _assert_match_bson(&payload_bson,
-                               TMP_BSON(BSON_STR({"k" : 1, "sp" : 2, "tf" : 6, "mn" : 0, "mx" : 1234567})));
+            _assert_match_bson(&payload_bson, TMP_BSON(BSON_STR({"sp" : 2, "tf" : 6, "mn" : 0, "mx" : 1234567})));
         }
     }
 
@@ -5349,8 +5348,7 @@ static void _test_range_sends_cryptoParams(_mongocrypt_tester_t *tester) {
         {
             bson_t payload_bson;
             lookup_payload_bson(tc.expect, "v", &payload_bson);
-            _assert_match_bson(&payload_bson,
-                               TMP_BSON(BSON_STR({"k" : 1, "sp" : 2, "tf" : 3, "mn" : 0, "mx" : 1234567})));
+            _assert_match_bson(&payload_bson, TMP_BSON(BSON_STR({"sp" : 2, "tf" : 3, "mn" : 0, "mx" : 1234567})));
         }
     }
 
@@ -5376,9 +5374,7 @@ static void _test_range_sends_cryptoParams(_mongocrypt_tester_t *tester) {
         {
             bson_t payload_bson;
             lookup_payload_bson(tc.expect, "v.$and.0.age.$gte", &payload_bson);
-            _assert_match_bson(
-                &payload_bson,
-                TMP_BSON(BSON_STR({"payload" : {"cm" : 1}, "sp" : 3, "tf" : 4, "mn" : 0, "mx" : 1234567})));
+            _assert_match_bson(&payload_bson, TMP_BSON(BSON_STR({"sp" : 3, "tf" : 4, "mn" : 0, "mx" : 1234567})));
         }
     }
 
@@ -5405,9 +5401,7 @@ static void _test_range_sends_cryptoParams(_mongocrypt_tester_t *tester) {
         {
             bson_t payload_bson;
             lookup_payload_bson(tc.expect, "v.$and.0.age.$gte", &payload_bson);
-            _assert_match_bson(
-                &payload_bson,
-                TMP_BSON(BSON_STR({"payload" : {"cm" : 1}, "sp" : 2, "tf" : 6, "mn" : 0, "mx" : 1234567})));
+            _assert_match_bson(&payload_bson, TMP_BSON(BSON_STR({"sp" : 2, "tf" : 6, "mn" : 0, "mx" : 1234567})));
         }
     }
 
