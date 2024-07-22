@@ -5412,7 +5412,56 @@ static void _test_range_sends_cryptoParams(_mongocrypt_tester_t *tester) {
     }
 
     // Test automatic insert.
+    {
+        autoencryption_test aet = {
+            .desc = "'range' sends crypto parameters for insert",
+            .cmd = TEST_FILE("./test/data/fle2-insert-rangev2/int32/cmd.json"),
+            .encrypted_field_map = TEST_FILE("./test/data/fle2-insert-rangev2/int32/encrypted-field-map.json"),
+            .mongocryptd_reply = TEST_FILE("./test/data/fle2-insert-rangev2/int32/mongocryptd-reply.json"),
+            .keys_to_feed = {key123},
+            .expect = TEST_FILE("./test/data/fle2-insert-rangev2/int32/encrypted-payload.json"),
+        };
+
+        // Set fixed random data for deterministic results.
+        mongocrypt_binary_t *rng_data = TEST_BIN(1024);
+        aet.rng_data = (_test_rng_data_source){.buf = {.data = rng_data->data, .len = rng_data->len}};
+
+        autoencryption_test_run(&aet);
+
+        // Check the parameters are present in the final payload.
+        {
+            bson_t payload_bson;
+            lookup_payload_bson(aet.expect, "documents.0.encrypted", &payload_bson);
+            _assert_match_bson(&payload_bson,
+                               TMP_BSON(BSON_STR({"sp" : 2, "tf" : 6, "mn" : -2147483648, "mx" : 2147483647})));
+        }
+    }
+
     // Test automatic find.
+    {
+        autoencryption_test aet = {
+            .desc = "'range' sends crypto parameters for find",
+            .cmd = TEST_FILE("./test/data/fle2-find-rangev2/int32/cmd.json"),
+            .encrypted_field_map = TEST_FILE("./test/data/fle2-find-rangev2/int32/encrypted-field-map.json"),
+            .mongocryptd_reply = TEST_FILE("./test/data/fle2-find-rangev2/int32/mongocryptd-reply.json"),
+            .keys_to_feed = {key123},
+            .expect = TEST_FILE("./test/data/fle2-find-rangev2/int32/encrypted-payload.json"),
+        };
+
+        // Set fixed random data for deterministic results.
+        mongocrypt_binary_t *rng_data = TEST_BIN(1024);
+        aet.rng_data = (_test_rng_data_source){.buf = {.data = rng_data->data, .len = rng_data->len}};
+
+        autoencryption_test_run(&aet);
+
+        // Check the parameters are present in the final payload.
+        {
+            bson_t payload_bson;
+            lookup_payload_bson(aet.expect, "filter.$and.0.encrypted.$gte", &payload_bson);
+            _assert_match_bson(&payload_bson,
+                               TMP_BSON(BSON_STR({"sp" : 2, "tf" : 6, "mn" : -2147483648, "mx" : 2147483647})));
+        }
+    }
 
     _mongocrypt_buffer_cleanup(&key123_id);
     _mongocrypt_buffer_cleanup(&keyABC_id);
