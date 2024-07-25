@@ -1419,6 +1419,8 @@ bool _mongocrypt_random_int64(_mongocrypt_crypto_t *crypto,
         return false;
     }
 
+    u64_out = BSON_UINT64_TO_LE(u64_out); // Use little-endian to enable deterministic tests on big-endian machines.
+
     /* Zero the leading bit to ensure rand_i64 is non-negative. */
     u64_out &= (~(1ull << 63));
     *out = (int64_t)u64_out;
