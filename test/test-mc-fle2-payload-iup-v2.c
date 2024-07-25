@@ -206,8 +206,7 @@ static void _test_mc_FLE2InsertUpdatePayloadV2_includes_crypto_params(_mongocryp
 }
 
 static void _test_mc_FLE2InsertUpdatePayloadV2_parses_crypto_params(_mongocrypt_tester_t *tester) {
-    mongocrypt_binary_t *payload =
-        TEST_FILE("test/data/fle2-insert-rangev2-explicit/int32-defaults/encrypted-payload-v2.json");
+    mongocrypt_binary_t *payload = TEST_FILE("test/data/range-sends-cryptoParams/explicit-insert-int32/expected.json");
 
     _mongocrypt_buffer_t payload_buf;
     // Unwrap the { "v": <BSON binary> } into a `_mongocrypt_buffer_t`.
@@ -227,12 +226,12 @@ static void _test_mc_FLE2InsertUpdatePayloadV2_parses_crypto_params(_mongocrypt_
     mongocrypt_status_destroy(status);
 
     ASSERT(got.sparsity.set);
-    ASSERT_CMPINT64(got.sparsity.value, ==, 2);
+    ASSERT_CMPINT64(got.sparsity.value, ==, 3);
 
     ASSERT(!got.precision.set); // Payload does not include precision.
 
     ASSERT(got.trimFactor.set);
-    ASSERT_CMPUINT32(got.trimFactor.value, ==, 6);
+    ASSERT_CMPUINT32(got.trimFactor.value, ==, 4);
 
     ASSERT(got.indexMin.value_type == BSON_TYPE_INT32);
     ASSERT_CMPINT32(got.indexMin.value.v_int32, ==, 0);
