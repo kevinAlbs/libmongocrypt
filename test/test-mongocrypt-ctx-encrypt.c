@@ -5134,6 +5134,11 @@ typedef struct {
 } autoencryption_test;
 
 static void autoencryption_test_run(autoencryption_test *aet) {
+    if (!_aes_ctr_is_supported_by_os) {
+        printf("Common Crypto with no CTR support detected. Skipping.");
+        return;
+    }
+
     printf("  auto_encryption test: '%s' ... begin\n", aet->desc);
 
     // Reset global counter for the `payloadId` to produce deterministic payloads.
@@ -5207,11 +5212,6 @@ static void autoencryption_test_run(autoencryption_test *aet) {
 }
 
 static void _test_no_trimFactor(_mongocrypt_tester_t *tester) {
-    if (!_aes_ctr_is_supported_by_os) {
-        printf("Common Crypto with no CTR support detected. Skipping.");
-        return;
-    }
-
     mongocrypt_binary_t *key123 = TEST_FILE("./test/data/keys/12345678123498761234123456789012-local-document.json");
 
     // Test insert.
