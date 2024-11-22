@@ -376,7 +376,22 @@ static bool _mongo_op_collinfo(mongocrypt_ctx_t *ctx, mongocrypt_binary_t *out) 
     BSON_ASSERT_PARAM(out);
 
     ectx = (_mongocrypt_ctx_encrypt_t *)ctx;
-    cmd = BCON_NEW("name", BCON_UTF8(ectx->target_coll));
+    if (ectx->more_target_colls.len == 0) {
+        cmd = BCON_NEW("name", BCON_UTF8(ectx->target_coll));
+    } else {
+        cmd = bson_new();
+        bson_t in;
+        BSON_ASSERT(BSON_APPEND_DOCUMENT_BEGIN(cmd, "name", &in));
+        bson_array_builder_t *bab;
+        BSON_ASSERT(BSON_APPEND_ARRAY_BUILDER_BEGIN(&in, "$in", &bab));
+        BSON_ASSERT(bson_array_builder_append_utf8(bab, ectx->target_coll, -1));
+        for (size_t i = 0; i < ectx->more_target_colls.len; i++) {
+            const char *name = _mc_array_index(&ectx->more_target_colls, const char *, i);
+            BSON_ASSERT(bson_array_builder_append_utf8(bab, name, -1));
+        }
+        BSON_ASSERT(bson_append_array_builder_end(&in, bab));
+        BSON_ASSERT(bson_append_document_end(cmd, &in));
+    }
     CRYPT_TRACEF(&ectx->parent.crypt->log, "constructed: %s\n", tmp_json(cmd));
     _mongocrypt_buffer_steal_from_bson(&ectx->list_collections_filter, cmd);
     out->data = ectx->list_collections_filter.data;
@@ -2143,6 +2158,10 @@ static void _cleanup(mongocrypt_ctx_t *ctx) {
     bson_free(ectx->cmd_db);
     bson_free(ectx->target_db);
     bson_free(ectx->target_coll);
+    for (size_t i = 0; i < ectx->more_target_colls.len; i++) {
+        bson_free(_mc_array_index(&ectx->more_target_colls, char *, i));
+    }
+    _mc_array_destroy(&ectx->more_target_colls);
     _mongocrypt_buffer_cleanup(&ectx->list_collections_filter);
     _mongocrypt_buffer_cleanup(&ectx->schema);
     _mongocrypt_buffer_cleanup(&ectx->encrypted_field_config);
@@ -2864,6 +2883,144 @@ static bool needs_ismaster_check(mongocrypt_ctx_t *ctx) {
     return using_mongocryptd && (0 == strcmp(ectx->cmd_name, "create") || 0 == strcmp(ectx->cmd_name, "createIndexes"));
 }
 
+// `find_collections_in_pipeline` finds other collection names in an aggregate pipeline that may need schemas.
+static bool find_collections_in_pipeline(bson_iter_t pipeline_iter,
+                                         mc_array_t *colls,
+                                         mstr_view path,
+                                         mongocrypt_status_t *status) {
+    bson_iter_t array_iter;
+    if (!BSON_ITER_HOLDS_ARRAY(&pipeline_iter) || !bson_iter_recurse(&pipeline_iter, &array_iter)) {
+        CLIENT_ERR("failed to recurse pipeline at path: %s", path.data);
+        return false;
+    }
+
+    while (bson_iter_next(&array_iter)) {
+        bson_iter_t stage_iter;
+        const char *stage_key = bson_iter_key(&array_iter);
+
+        if (!BSON_ITER_HOLDS_DOCUMENT(&array_iter) || !bson_iter_recurse(&array_iter, &stage_iter)
+            || !bson_iter_next(&stage_iter)) {
+            CLIENT_ERR("failed to recurse stage at path: %s.%s", path.data, stage_key);
+            return false;
+        }
+
+        const char *stage = bson_iter_key(&stage_iter);
+        // Check for $lookup.
+        if (0 == strcmp(stage, "$lookup")) {
+            bson_iter_t lookup_iter;
+            if (!BSON_ITER_HOLDS_DOCUMENT(&stage_iter) || !bson_iter_recurse(&stage_iter, &lookup_iter)) {
+                CLIENT_ERR("failed to recurse $lookup at path: %s.%s", path.data, stage_key);
+                return false;
+            }
+
+            while (bson_iter_next(&lookup_iter)) {
+                const char *field = bson_iter_key(&lookup_iter);
+                if (0 == strcmp(field, "from")) {
+                    if (!BSON_ITER_HOLDS_UTF8(&lookup_iter)) {
+                        CLIENT_ERR("expected string, but '%s' for 'from' field at path: %s.%s",
+                                   mc_bson_type_to_string(bson_iter_type(&lookup_iter)),
+                                   path.data,
+                                   stage_key);
+                        return false;
+                    }
+                    char *from = bson_strdup(bson_iter_utf8(&lookup_iter, NULL));
+                    _mc_array_append_val(colls, from);
+                }
+
+                if (0 == strcmp(field, "pipeline")) {
+                    mstr subpath = mstr_append(path, mstrv_lit("."));
+                    mstr_inplace_append(&subpath, mstrv_view_cstr(stage_key));
+                    mstr_inplace_append(&subpath, mstrv_lit(".$lookup.pipeline"));
+                    if (!find_collections_in_pipeline(lookup_iter, colls, subpath.view, status)) {
+                        mstr_free(subpath);
+                        return false;
+                    }
+                    mstr_free(subpath);
+                }
+            }
+        }
+
+        // Check for $facet.
+        if (0 == strcmp(stage, "$facet")) {
+            bson_iter_t facet_iter;
+            if (!BSON_ITER_HOLDS_DOCUMENT(&stage_iter) || !bson_iter_recurse(&stage_iter, &facet_iter)) {
+                CLIENT_ERR("failed to recurse $facet at path: %s.%s", path.data, stage_key);
+                return false;
+            }
+
+            while (bson_iter_next(&facet_iter)) {
+                const char *field = bson_iter_key(&facet_iter);
+                mstr subpath = mstr_append(path, mstrv_lit("."));
+                mstr_inplace_append(&subpath, mstrv_view_cstr(stage_key));
+                mstr_inplace_append(&subpath, mstrv_lit(".$facet."));
+                mstr_inplace_append(&subpath, mstrv_view_cstr(field));
+                if (!find_collections_in_pipeline(facet_iter, colls, subpath.view, status)) {
+                    mstr_free(subpath);
+                    return false;
+                }
+                mstr_free(subpath);
+            }
+        }
+
+        // Check for $unionWith.
+        if (0 == strcmp(stage, "$unionWith")) {
+            bson_iter_t unionWith_iter;
+            if (!BSON_ITER_HOLDS_DOCUMENT(&stage_iter) || !bson_iter_recurse(&stage_iter, &unionWith_iter)) {
+                CLIENT_ERR("failed to recurse $unionWith at path: %s.%s", path.data, stage_key);
+                return false;
+            }
+
+            while (bson_iter_next(&unionWith_iter)) {
+                const char *field = bson_iter_key(&unionWith_iter);
+                if (0 == strcmp(field, "coll")) {
+                    if (!BSON_ITER_HOLDS_UTF8(&unionWith_iter)) {
+                        CLIENT_ERR("expected string, but got '%s' for 'coll' field at path: %s.%s",
+                                   mc_bson_type_to_string(bson_iter_type(&unionWith_iter)),
+                                   path.data,
+                                   stage_key);
+                        return false;
+                    }
+                    char *coll = bson_strdup(bson_iter_utf8(&unionWith_iter, NULL));
+                    _mc_array_append_val(colls, coll);
+                }
+
+                if (0 == strcmp(field, "pipeline")) {
+                    mstr subpath = mstr_append(path, mstrv_lit("."));
+                    mstr_inplace_append(&subpath, mstrv_view_cstr(stage_key));
+                    mstr_inplace_append(&subpath, mstrv_lit(".$unionWith.pipeline"));
+                    if (!find_collections_in_pipeline(unionWith_iter, colls, subpath.view, status)) {
+                        mstr_free(subpath);
+                        return false;
+                    }
+                    mstr_free(subpath);
+                }
+            }
+        }
+    }
+
+    return true;
+}
+
+static bool find_collections_in_agg(mongocrypt_binary_t *cmd, mc_array_t *colls, mongocrypt_status_t *status) {
+    bson_t cmd_bson;
+    if (!_mongocrypt_binary_to_bson(cmd, &cmd_bson)) {
+        CLIENT_ERR("failed to convert command to BSON");
+        return false;
+    }
+
+    bson_iter_t iter;
+    if (!bson_iter_init_find(&iter, &cmd_bson, "pipeline")) {
+        CLIENT_ERR("failed to find 'pipeline'");
+        return false;
+    }
+
+    if (!find_collections_in_pipeline(iter, colls, mstrv_lit("aggregate.pipeline"), status)) {
+        return false;
+    }
+
+    return true;
+}
+
 bool mongocrypt_ctx_encrypt_init(mongocrypt_ctx_t *ctx, const char *db, int32_t db_len, mongocrypt_binary_t *cmd) {
     _mongocrypt_ctx_encrypt_t *ectx;
     _mongocrypt_ctx_opts_spec_t opts_spec;
@@ -2896,6 +3053,7 @@ bool mongocrypt_ctx_encrypt_init(mongocrypt_ctx_t *ctx, const char *db, int32_t 
     ctx->vtable.finalize = _finalize;
     ctx->vtable.cleanup = _cleanup;
     ectx->bypass_query_analysis = ctx->crypt->opts.bypass_query_analysis;
+    _mc_array_init(&ectx->more_target_colls, sizeof(char *));
 
     if (!cmd || !cmd->data) {
         return _mongocrypt_ctx_fail_w_msg(ctx, "invalid command");
@@ -2939,6 +3097,13 @@ bool mongocrypt_ctx_encrypt_init(mongocrypt_ctx_t *ctx, const char *db, int32_t 
             return _mongocrypt_ctx_fail_w_msg(ctx, "unexpected error: did not bypass or error but no collection name");
         }
         ectx->target_ns = bson_strdup_printf("%s.%s", ectx->cmd_db, ectx->target_coll);
+    }
+
+    if (0 == strcmp(ectx->cmd_name, "aggregate")) {
+        if (!find_collections_in_agg(cmd, &ectx->more_target_colls, ctx->status)) {
+            _mongocrypt_ctx_fail(ctx);
+            return false;
+        }
     }
 
     if (ctx->opts.kek.provider.aws.region || ctx->opts.kek.provider.aws.cmk) {

@@ -158,6 +158,10 @@ typedef struct {
     // `target_coll` is the target namespace collection name.
     char *target_coll;
 
+    // `more_target_colls` are additional target collections. For `aggregate`, this includes collections referenced in
+    // $lookup stages.
+    mc_array_t more_target_colls;
+
     _mongocrypt_buffer_t list_collections_filter;
     _mongocrypt_buffer_t schema;
     /* TODO CDRIVER-3150: audit + rename these buffers.
