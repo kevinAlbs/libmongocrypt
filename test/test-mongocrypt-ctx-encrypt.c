@@ -5676,6 +5676,96 @@ static void _test_encrypt_retry(_mongocrypt_tester_t *tester) {
     }
 }
 
+static void _test_lookup(_mongocrypt_tester_t *tester) {
+    // Test $lookup with mongocryptd.
+#define TF(suffix) TEST_FILE("./test/data/lookup/csfle-mongocryptd/" suffix)
+    {
+        mongocrypt_t *crypt = _mongocrypt_tester_mongocrypt(TESTER_MONGOCRYPT_DEFAULT);
+        mongocrypt_ctx_t *ctx = mongocrypt_ctx_new(crypt);
+
+        ASSERT_OK(mongocrypt_ctx_encrypt_init(ctx, "db", -1, TF("01-cmd.json")), ctx);
+
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_COLLINFO);
+        {
+            mongocrypt_binary_t *expect = TF("02-listCollections-filter.json");
+            mongocrypt_binary_t *got = mongocrypt_binary_new();
+            ASSERT_OK(mongocrypt_ctx_mongo_op(ctx, got), ctx);
+            ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
+            mongocrypt_binary_destroy(got);
+        }
+
+        mongocrypt_ctx_destroy(ctx);
+        mongocrypt_destroy(crypt);
+    }
+#undef TF
+
+    // Test nested $lookup with mongocryptd.
+#define TF(suffix) TEST_FILE("./test/data/lookup/csfle-mongocryptd-nested/" suffix)
+    {
+        mongocrypt_t *crypt = _mongocrypt_tester_mongocrypt(TESTER_MONGOCRYPT_DEFAULT);
+        mongocrypt_ctx_t *ctx = mongocrypt_ctx_new(crypt);
+
+        ASSERT_OK(mongocrypt_ctx_encrypt_init(ctx, "db", -1, TF("01-cmd.json")), ctx);
+
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_COLLINFO);
+        {
+            mongocrypt_binary_t *expect = TF("02-listCollections-filter.json");
+            mongocrypt_binary_t *got = mongocrypt_binary_new();
+            ASSERT_OK(mongocrypt_ctx_mongo_op(ctx, got), ctx);
+            ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
+            mongocrypt_binary_destroy(got);
+        }
+
+        mongocrypt_ctx_destroy(ctx);
+        mongocrypt_destroy(crypt);
+    }
+#undef TF
+
+    // Test $lookup within $unionWith with mongocryptd.
+#define TF(suffix) TEST_FILE("./test/data/lookup/csfle-mongocryptd-unionWith/" suffix)
+    {
+        mongocrypt_t *crypt = _mongocrypt_tester_mongocrypt(TESTER_MONGOCRYPT_DEFAULT);
+        mongocrypt_ctx_t *ctx = mongocrypt_ctx_new(crypt);
+
+        ASSERT_OK(mongocrypt_ctx_encrypt_init(ctx, "db", -1, TF("01-cmd.json")), ctx);
+
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_COLLINFO);
+        {
+            mongocrypt_binary_t *expect = TF("02-listCollections-filter.json");
+            mongocrypt_binary_t *got = mongocrypt_binary_new();
+            ASSERT_OK(mongocrypt_ctx_mongo_op(ctx, got), ctx);
+            ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
+            mongocrypt_binary_destroy(got);
+        }
+
+        mongocrypt_ctx_destroy(ctx);
+        mongocrypt_destroy(crypt);
+    }
+#undef TF
+
+    // Test $lookup within $facet with mongocryptd.
+#define TF(suffix) TEST_FILE("./test/data/lookup/csfle-mongocryptd-facet/" suffix)
+    {
+        mongocrypt_t *crypt = _mongocrypt_tester_mongocrypt(TESTER_MONGOCRYPT_DEFAULT);
+        mongocrypt_ctx_t *ctx = mongocrypt_ctx_new(crypt);
+
+        ASSERT_OK(mongocrypt_ctx_encrypt_init(ctx, "db", -1, TF("01-cmd.json")), ctx);
+
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_COLLINFO);
+        {
+            mongocrypt_binary_t *expect = TF("02-listCollections-filter.json");
+            mongocrypt_binary_t *got = mongocrypt_binary_new();
+            ASSERT_OK(mongocrypt_ctx_mongo_op(ctx, got), ctx);
+            ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
+            mongocrypt_binary_destroy(got);
+        }
+
+        mongocrypt_ctx_destroy(ctx);
+        mongocrypt_destroy(crypt);
+    }
+#undef TF
+}
+
 void _mongocrypt_tester_install_ctx_encrypt(_mongocrypt_tester_t *tester) {
     INSTALL_TEST(_test_explicit_encrypt_init);
     INSTALL_TEST(_test_encrypt_init);
@@ -5761,4 +5851,5 @@ void _mongocrypt_tester_install_ctx_encrypt(_mongocrypt_tester_t *tester) {
     INSTALL_TEST(_test_no_trimFactor);
     INSTALL_TEST(_test_range_sends_cryptoParams);
     INSTALL_TEST(_test_encrypt_retry);
+    INSTALL_TEST(_test_lookup);
 }
