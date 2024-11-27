@@ -164,6 +164,9 @@ typedef struct {
 
     _mongocrypt_buffer_t list_collections_filter;
     _mongocrypt_buffer_t schema;
+    // `more_schemas` are additional JSON schemas. For `aggregate`, this includes collections referenced in
+    // $lookup stages. The indexes match that of `more_target_colls`.
+    mc_array_t more_schemas;
     /* TODO CDRIVER-3150: audit + rename these buffers.
      * original_cmd for explicit is {v: <BSON value>}, for auto is the command to
      * be encrypted.

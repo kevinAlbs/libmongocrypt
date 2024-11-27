@@ -5692,6 +5692,20 @@ static void _test_lookup(_mongocrypt_tester_t *tester) {
             ASSERT_OK(mongocrypt_ctx_mongo_op(ctx, got), ctx);
             ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
             mongocrypt_binary_destroy(got);
+
+            // Feed both needed schemas.
+            ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, TF("02-collInfo-c1.json")), ctx);
+            ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, TF("02-collInfo-c2.json")), ctx);
+            ASSERT_OK(mongocrypt_ctx_mongo_done(ctx), ctx);
+        }
+
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_MARKINGS);
+        {
+            mongocrypt_binary_t *expect = TF("03-cmd-to-mongocryptd.json");
+            mongocrypt_binary_t *got = mongocrypt_binary_new();
+            ASSERT_OK(mongocrypt_ctx_mongo_op(ctx, got), ctx);
+            ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
+            mongocrypt_binary_destroy(got);
         }
 
         mongocrypt_ctx_destroy(ctx);

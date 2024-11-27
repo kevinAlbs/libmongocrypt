@@ -399,6 +399,150 @@ static bool _mongo_op_collinfo(mongocrypt_ctx_t *ctx, mongocrypt_binary_t *out) 
     return true;
 }
 
+static bool _parse_ns_from_collinfo(bson_t *collinfo, char **db, char **coll, mongocrypt_status_t *status) {
+    *db = NULL;
+    *coll = NULL;
+
+    bson_iter_t collinfo_iter;
+    if (!bson_iter_init(&collinfo_iter, collinfo)) {
+        return false;
+    }
+
+    bson_iter_t idIndex_iter = collinfo_iter;
+    if (!bson_iter_find(&idIndex_iter, "idIndex") || !BSON_ITER_HOLDS_DOCUMENT(&idIndex_iter)) {
+        CLIENT_ERR("failed to find idIndex");
+        return false;
+    }
+    bson_iter_t ns_iter;
+    if (!bson_iter_recurse(&idIndex_iter, &ns_iter)) {
+        CLIENT_ERR("failed to recurse into idIndex");
+        return false;
+    }
+    if (!bson_iter_find(&ns_iter, "ns") || !BSON_ITER_HOLDS_UTF8(&ns_iter)) {
+        CLIENT_ERR("failed to find ns");
+        return false;
+    }
+
+    const char *ns = bson_iter_utf8(&ns_iter, NULL);
+
+    char *dot = strstr(ns, ".");
+    if (!dot) {
+        CLIENT_ERR("failed to find . in %s", ns);
+        return false;
+    }
+
+    *db = bson_strndup(ns, dot - ns);
+    *coll = bson_strdup(dot + 1);
+    return true;
+}
+
+// `_set_schema_from_collinfo_for_more` sets a schema for a referenced collection.
+static bool _set_schema_from_collinfo_for_more(mongocrypt_ctx_t *ctx, bson_t *collinfo) {
+    BSON_ASSERT_PARAM(ctx);
+    BSON_ASSERT_PARAM(collinfo);
+    mongocrypt_status_t *status = ctx->status;
+    bool ok = true;
+    char *db = NULL, *coll = NULL;
+
+    _mongocrypt_ctx_encrypt_t *ectx = (_mongocrypt_ctx_encrypt_t *)ctx;
+    BSON_ASSERT(ectx->more_target_colls.len > 0);
+    bson_iter_t collinfo_iter;
+
+    if (!bson_iter_init(&collinfo_iter, collinfo)) {
+        CLIENT_ERR("failed to iterate into collection info");
+        goto fail;
+    }
+
+    // Get the collinfo collection and database.
+    if (!_parse_ns_from_collinfo(collinfo, &db, &coll, ctx->status)) {
+        goto fail;
+    }
+
+    // Get the index in `more_target_colls` of the matching collection.
+    size_t index;
+    {
+        bool matched = false;
+
+        // Get the target database. The target database may be the same as the command database.
+        const char *target_db;
+        if (ectx->target_db == NULL) {
+            // The target database is the same as the command database.
+            target_db = ectx->cmd_db;
+        }
+
+        // Find matching index.
+        for (index = 0; index < ectx->more_target_colls.len; index++) {
+            const char *target_coll = _mc_array_index(&ectx->more_target_colls, const char *, index);
+            if (0 == strcmp(db, target_db) && 0 == strcmp(coll, target_coll)) {
+                matched = true;
+                break;
+            }
+        }
+        if (!matched) {
+            CLIENT_ERR("given unexpected schema for %s.%s", db, coll);
+            goto fail;
+        }
+    }
+
+    // Disallow views.
+    bson_iter_t type_iter = collinfo_iter;
+    if (bson_iter_find(&type_iter, "type") && BSON_ITER_HOLDS_UTF8(&type_iter) && bson_iter_utf8(&type_iter, NULL)
+        && 0 == strcmp("view", bson_iter_utf8(&type_iter, NULL))) {
+        CLIENT_ERR("cannot auto encrypt with view: %s.%s", db, coll);
+        goto fail;
+    }
+
+    // Check if collection is configured for QE.
+    bson_iter_t encryptedFields_iter = collinfo_iter;
+    if (bson_iter_find_descendant(&encryptedFields_iter, "options.encryptedFields", &encryptedFields_iter)) {
+        CLIENT_ERR("multiple schemas is not-yet supported for QE. Found encryptedFields for: %s.%s", db, coll);
+        goto fail;
+    }
+
+    // Check if collection is configured for CSFLE.
+    bool found_jsonschema = false;
+    bson_iter_t validator_iter = collinfo_iter;
+    if (bson_iter_find_descendant(&validator_iter, "options.validator", &validator_iter)
+        && BSON_ITER_HOLDS_DOCUMENT(&validator_iter)) {
+        if (!bson_iter_recurse(&validator_iter, &validator_iter)) {
+            CLIENT_ERR("failed to iterate validator");
+            goto fail;
+        }
+        while (bson_iter_next(&validator_iter)) {
+            const char *key = bson_iter_key(&validator_iter);
+            if (0 == strcmp("$jsonSchema", key)) {
+                if (found_jsonschema) {
+                    CLIENT_ERR("duplicate $jsonSchema fields found for: %s.%s", db, coll);
+                    goto fail;
+                }
+
+                _mongocrypt_buffer_t *schema = _mc_array_index(&ectx->more_schemas, _mongocrypt_buffer_t *, index);
+                if (!_mongocrypt_buffer_empty(schema)) {
+                    CLIENT_ERR("got duplicate schemas for: %s.%s", db, coll);
+                    goto fail;
+                }
+
+                if (!_mongocrypt_buffer_copy_from_document_iter(schema, &validator_iter)) {
+                    CLIENT_ERR("malformed $jsonSchema for: %s.%s", db, coll);
+                    goto fail;
+                }
+                found_jsonschema = true;
+            } else {
+                ectx->collinfo_has_siblings = true;
+            }
+        }
+    }
+
+    ok = true;
+fail:
+    if (!ok) {
+        _mongocrypt_ctx_fail(ctx);
+    }
+    bson_free(db);
+    bson_free(coll);
+    return ok;
+}
+
 static bool _set_schema_from_collinfo(mongocrypt_ctx_t *ctx, bson_t *collinfo) {
     bson_iter_t iter;
     _mongocrypt_ctx_encrypt_t *ectx;
@@ -409,6 +553,31 @@ static bool _set_schema_from_collinfo(mongocrypt_ctx_t *ctx, bson_t *collinfo) {
 
     /* Parse out the schema. */
     ectx = (_mongocrypt_ctx_encrypt_t *)ctx;
+
+    // Check if this schema is for the target collection or a referenced collection.
+    if (ectx->more_target_colls.len > 0) {
+        // Get the collection and database.
+        char *db, *coll;
+        if (!_parse_ns_from_collinfo(collinfo, &db, &coll, ctx->status)) {
+            bson_free(db);
+            bson_free(coll);
+            return _mongocrypt_ctx_fail(ctx);
+        }
+
+        const char *target_db;
+        if (ectx->target_db == NULL) {
+            // The target database is the same as the command database.
+            target_db = ectx->cmd_db;
+        }
+        if (!(0 == strcmp(db, target_db) && 0 == strcmp(coll, ectx->target_coll))) {
+            // Schema does not match the target collection. Assume it matches a referenced collection.
+            bson_free(db);
+            bson_free(coll);
+            return _set_schema_from_collinfo_for_more(ctx, collinfo);
+        }
+        bson_free(db);
+        bson_free(coll);
+    }
 
     /* Disallow views. */
     if (bson_iter_init_find(&iter, collinfo, "type") && BSON_ITER_HOLDS_UTF8(&iter) && bson_iter_utf8(&iter, NULL)
@@ -798,21 +967,83 @@ static bool _create_markings_cmd_bson(mongocrypt_ctx_t *ctx, bson_t *out) {
     bson_init(out);
     bson_copy_to_excluding_noinit(&bson_view, out, "$db", NULL);
 
-    if (!_mongocrypt_buffer_empty(&ectx->schema)) {
-        // We have a schema buffer. View it as BSON:
-        if (!_mongocrypt_buffer_to_bson(&ectx->schema, &bson_view)) {
-            _mongocrypt_ctx_fail_w_msg(ctx, "invalid BSON schema");
-            return false;
+    if (ectx->more_target_colls.len > 0) {
+        mongocrypt_status_t *status = ctx->status;
+
+        // Get the target database. The target database may be the same as the command database.
+        const char *target_db;
+        if (ectx->target_db == NULL) {
+            // The target database is the same as the command database.
+            target_db = ectx->cmd_db;
         }
-        // Append the jsonSchema to the output command
-        BSON_APPEND_DOCUMENT(out, "jsonSchema", &bson_view);
+
+        bson_t csfleEncryptionSchemas;
+        BSON_ASSERT(BSON_APPEND_DOCUMENT_BEGIN(out, "csfleEncryptionSchemas", &csfleEncryptionSchemas));
+
+        // Append the target collection schema.
+        {
+            bson_t jsonSchema;
+            // We have a schema buffer. View it as BSON:
+            if (!_mongocrypt_buffer_to_bson(&ectx->schema, &jsonSchema)) {
+                CLIENT_ERR("invalid JSON schema for: %s.%s", target_db, ectx->target_coll);
+                _mongocrypt_ctx_fail(ctx);
+                return false;
+            }
+
+            char *ns = bson_strdup_printf("%s.%s", target_db, ectx->target_coll);
+            bson_t ns_to_doc;
+            BSON_ASSERT(BSON_APPEND_DOCUMENT_BEGIN(&csfleEncryptionSchemas, ns, &ns_to_doc));
+            bson_free(ns);
+
+            BSON_ASSERT(BSON_APPEND_DOCUMENT(&ns_to_doc, "schema", &jsonSchema));
+            BSON_ASSERT(
+                BSON_APPEND_BOOL(&ns_to_doc, "isRemoteSchema", true)); // TODO: check if schema is really remote.
+            BSON_ASSERT(bson_append_document_end(&csfleEncryptionSchemas, &ns_to_doc));
+        }
+
+        // Append the referenced collection schemas.
+        for (size_t i = 0; i < ectx->more_target_colls.len; i++) {
+            const char *target_coll = _mc_array_index(&ectx->more_target_colls, char *, i);
+            _mongocrypt_buffer_t *jsonSchema_buf = _mc_array_index(&ectx->more_schemas, _mongocrypt_buffer_t *, i);
+            bson_t jsonSchema;
+
+            // We have a schema buffer. View it as BSON:
+            if (!_mongocrypt_buffer_to_bson(jsonSchema_buf, &jsonSchema)) {
+                CLIENT_ERR("invalid JSON schema for: %s.%s", target_db, target_coll);
+                _mongocrypt_ctx_fail(ctx);
+                return false;
+            }
+
+            char *ns = bson_strdup_printf("%s.%s", target_db, target_coll);
+            bson_t ns_to_doc;
+            BSON_ASSERT(BSON_APPEND_DOCUMENT_BEGIN(&csfleEncryptionSchemas, ns, &ns_to_doc));
+            bson_free(ns);
+
+            BSON_ASSERT(BSON_APPEND_DOCUMENT(&ns_to_doc, "schema", &jsonSchema));
+            BSON_ASSERT(
+                BSON_APPEND_BOOL(&ns_to_doc, "isRemoteSchema", true)); // TODO: check if schema is really remote.
+            BSON_ASSERT(bson_append_document_end(&csfleEncryptionSchemas, &ns_to_doc));
+        }
+
+        BSON_ASSERT(bson_append_document_end(out, &csfleEncryptionSchemas));
+
     } else {
-        bson_t empty = BSON_INITIALIZER;
-        BSON_APPEND_DOCUMENT(out, "jsonSchema", &empty);
+        if (!_mongocrypt_buffer_empty(&ectx->schema)) {
+            // We have a schema buffer. View it as BSON:
+            if (!_mongocrypt_buffer_to_bson(&ectx->schema, &bson_view)) {
+                _mongocrypt_ctx_fail_w_msg(ctx, "invalid BSON schema");
+                return false;
+            }
+            // Append the jsonSchema to the output command
+            BSON_APPEND_DOCUMENT(out, "jsonSchema", &bson_view);
+        } else {
+            bson_t empty = BSON_INITIALIZER;
+            BSON_APPEND_DOCUMENT(out, "jsonSchema", &empty);
+        }
+        // if a local schema was not set, set isRemoteSchema=true
+        BSON_APPEND_BOOL(out, "isRemoteSchema", !ectx->used_local_schema);
     }
 
-    // if a local schema was not set, set isRemoteSchema=true
-    BSON_APPEND_BOOL(out, "isRemoteSchema", !ectx->used_local_schema);
     return true;
 }
 
@@ -2162,6 +2393,12 @@ static void _cleanup(mongocrypt_ctx_t *ctx) {
         bson_free(_mc_array_index(&ectx->more_target_colls, char *, i));
     }
     _mc_array_destroy(&ectx->more_target_colls);
+    for (size_t i = 0; i < ectx->more_schemas.len; i++) {
+        _mongocrypt_buffer_t *buf = _mc_array_index(&ectx->more_schemas, _mongocrypt_buffer_t *, i);
+        _mongocrypt_buffer_cleanup(buf);
+        bson_free(buf);
+    }
+    _mc_array_destroy(&ectx->more_schemas);
     _mongocrypt_buffer_cleanup(&ectx->list_collections_filter);
     _mongocrypt_buffer_cleanup(&ectx->schema);
     _mongocrypt_buffer_cleanup(&ectx->encrypted_field_config);
@@ -3054,6 +3291,7 @@ bool mongocrypt_ctx_encrypt_init(mongocrypt_ctx_t *ctx, const char *db, int32_t 
     ctx->vtable.cleanup = _cleanup;
     ectx->bypass_query_analysis = ctx->crypt->opts.bypass_query_analysis;
     _mc_array_init(&ectx->more_target_colls, sizeof(char *));
+    _mc_array_init(&ectx->more_schemas, sizeof(_mongocrypt_buffer_t *));
 
     if (!cmd || !cmd->data) {
         return _mongocrypt_ctx_fail_w_msg(ctx, "invalid command");
@@ -3103,6 +3341,11 @@ bool mongocrypt_ctx_encrypt_init(mongocrypt_ctx_t *ctx, const char *db, int32_t 
         if (!find_collections_in_agg(cmd, &ectx->more_target_colls, ctx->status)) {
             _mongocrypt_ctx_fail(ctx);
             return false;
+        }
+        // Create associated entries for schemas.
+        for (size_t i = 0; i < ectx->more_target_colls.len; i++) {
+            _mongocrypt_buffer_t *empty = bson_malloc0(sizeof(_mongocrypt_buffer_t));
+            _mc_array_append_val(&ectx->more_schemas, empty);
         }
     }
 
