@@ -3170,6 +3170,7 @@ static bool needs_ismaster_check(mongocrypt_ctx_t *ctx) {
 static bool find_collections_in_pipeline(bson_iter_t pipeline_iter,
                                          mc_array_t *colls,
                                          mstr_view path,
+                                         const char *target_coll,
                                          mongocrypt_status_t *status) {
     bson_iter_t array_iter;
     if (!BSON_ITER_HOLDS_ARRAY(&pipeline_iter) || !bson_iter_recurse(&pipeline_iter, &array_iter)) {
@@ -3207,14 +3208,29 @@ static bool find_collections_in_pipeline(bson_iter_t pipeline_iter,
                         return false;
                     }
                     char *from = bson_strdup(bson_iter_utf8(&lookup_iter, NULL));
-                    _mc_array_append_val(colls, from);
+
+                    bool is_duplicate = false;
+                    // Check for duplicates.
+                    for (size_t i = 0; i < colls->len; i++) {
+                        const char *coll = _mc_array_index(colls, const char *, i);
+                        if (0 == strcmp(from, coll)) {
+                            is_duplicate = true;
+                            break;
+                        }
+                    }
+                    if (0 == strcmp(from, target_coll)) {
+                        is_duplicate = true;
+                    }
+                    if (!is_duplicate) {
+                        _mc_array_append_val(colls, from);
+                    }
                 }
 
                 if (0 == strcmp(field, "pipeline")) {
                     mstr subpath = mstr_append(path, mstrv_lit("."));
                     mstr_inplace_append(&subpath, mstrv_view_cstr(stage_key));
                     mstr_inplace_append(&subpath, mstrv_lit(".$lookup.pipeline"));
-                    if (!find_collections_in_pipeline(lookup_iter, colls, subpath.view, status)) {
+                    if (!find_collections_in_pipeline(lookup_iter, colls, subpath.view, target_coll, status)) {
                         mstr_free(subpath);
                         return false;
                     }
@@ -3237,7 +3253,7 @@ static bool find_collections_in_pipeline(bson_iter_t pipeline_iter,
                 mstr_inplace_append(&subpath, mstrv_view_cstr(stage_key));
                 mstr_inplace_append(&subpath, mstrv_lit(".$facet."));
                 mstr_inplace_append(&subpath, mstrv_view_cstr(field));
-                if (!find_collections_in_pipeline(facet_iter, colls, subpath.view, status)) {
+                if (!find_collections_in_pipeline(facet_iter, colls, subpath.view, target_coll, status)) {
                     mstr_free(subpath);
                     return false;
                 }
@@ -3271,7 +3287,7 @@ static bool find_collections_in_pipeline(bson_iter_t pipeline_iter,
                     mstr subpath = mstr_append(path, mstrv_lit("."));
                     mstr_inplace_append(&subpath, mstrv_view_cstr(stage_key));
                     mstr_inplace_append(&subpath, mstrv_lit(".$unionWith.pipeline"));
-                    if (!find_collections_in_pipeline(unionWith_iter, colls, subpath.view, status)) {
+                    if (!find_collections_in_pipeline(unionWith_iter, colls, subpath.view, target_coll, status)) {
                         mstr_free(subpath);
                         return false;
                     }
@@ -3284,7 +3300,10 @@ static bool find_collections_in_pipeline(bson_iter_t pipeline_iter,
     return true;
 }
 
-static bool find_collections_in_agg(mongocrypt_binary_t *cmd, mc_array_t *colls, mongocrypt_status_t *status) {
+static bool find_collections_in_agg(mongocrypt_binary_t *cmd,
+                                    mc_array_t *colls,
+                                    const char *target_coll,
+                                    mongocrypt_status_t *status) {
     bson_t cmd_bson;
     if (!_mongocrypt_binary_to_bson(cmd, &cmd_bson)) {
         CLIENT_ERR("failed to convert command to BSON");
@@ -3297,7 +3316,7 @@ static bool find_collections_in_agg(mongocrypt_binary_t *cmd, mc_array_t *colls,
         return true;
     }
 
-    if (!find_collections_in_pipeline(iter, colls, mstrv_lit("aggregate.pipeline"), status)) {
+    if (!find_collections_in_pipeline(iter, colls, mstrv_lit("aggregate.pipeline"), target_coll, status)) {
         return false;
     }
 
@@ -3385,7 +3404,7 @@ bool mongocrypt_ctx_encrypt_init(mongocrypt_ctx_t *ctx, const char *db, int32_t 
     }
 
     if (0 == strcmp(ectx->cmd_name, "aggregate")) {
-        if (!find_collections_in_agg(cmd, &ectx->more_target_colls, ctx->status)) {
+        if (!find_collections_in_agg(cmd, &ectx->more_target_colls, ectx->target_coll, ctx->status)) {
             _mongocrypt_ctx_fail(ctx);
             return false;
         }
