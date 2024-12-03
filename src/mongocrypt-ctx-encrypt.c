@@ -3293,8 +3293,8 @@ static bool find_collections_in_agg(mongocrypt_binary_t *cmd, mc_array_t *colls,
 
     bson_iter_t iter;
     if (!bson_iter_init_find(&iter, &cmd_bson, "pipeline")) {
-        CLIENT_ERR("failed to find 'pipeline'");
-        return false;
+        // Command may be malformed. Let server error.
+        return true;
     }
 
     if (!find_collections_in_pipeline(iter, colls, mstrv_lit("aggregate.pipeline"), status)) {
