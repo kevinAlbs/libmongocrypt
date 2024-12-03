@@ -5778,6 +5778,53 @@ static void _test_lookup(_mongocrypt_tester_t *tester) {
         mongocrypt_destroy(crypt);
     }
 #undef TF
+
+    // Test $lookup with mongocryptd when one schema is in the schemaMap.
+#define TF(suffix) TEST_FILE("./test/data/lookup/csfle-mongocryptd-schemaMap/" suffix)
+    {
+        mongocrypt_t *crypt = _mongocrypt_tester_mongocrypt(TESTER_MONGOCRYPT_SKIP_INIT);
+        ASSERT_OK(mongocrypt_setopt_schema_map(crypt, TF("00-schemaMap.json")), crypt);
+        ASSERT_OK(mongocrypt_init(crypt), crypt);
+        mongocrypt_ctx_t *ctx = mongocrypt_ctx_new(crypt);
+
+        ASSERT_OK(mongocrypt_ctx_encrypt_init(ctx, "db", -1, TF("01-cmd.json")), ctx);
+
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_COLLINFO);
+        {
+            mongocrypt_binary_t *expect = TF("02-listCollections-filter.json");
+            mongocrypt_binary_t *got = mongocrypt_binary_new();
+            ASSERT_OK(mongocrypt_ctx_mongo_op(ctx, got), ctx);
+            ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
+            mongocrypt_binary_destroy(got);
+
+            // Feed remote schema for "c1". "c2" is found in the schemaMap.
+            ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, TF("02-collInfo-c1.json")), ctx);
+            ASSERT_OK(mongocrypt_ctx_mongo_done(ctx), ctx);
+        }
+
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_MARKINGS);
+        {
+            mongocrypt_binary_t *expect = TF("03-cmd-to-mongocryptd.json");
+            mongocrypt_binary_t *got = mongocrypt_binary_new();
+            ASSERT_OK(mongocrypt_ctx_mongo_op(ctx, got), ctx);
+            ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
+            mongocrypt_binary_destroy(got);
+        }
+
+        mongocrypt_ctx_destroy(ctx);
+        mongocrypt_destroy(crypt);
+    }
+#undef TF
+
+    // TODO: Test $lookup with mongocryptd when one schema is already cached.
+    // TODO: Test $lookup with mixed CSFLE and QE schemas.
+    // TODO: Test $lookup from a view.
+    // TODO: Test $lookup from a collection with two $jsonSchema configured.
+    // TODO: Test $lookup from a collection $jsonSchema and a sibling validator configured.
+    // TODO: Test $lookup with mongocryptd and feeding the same schema twice.
+    // TODO: Test $lookup with mongocryptd and feeding a non-matching schema.
+    // TODO: Test $lookup with mongocryptd and feeding a non-matching schema with same collection, but different db.
+    // TODO: Test $lookup with mongocryptd with local schemas.
 }
 
 void _mongocrypt_tester_install_ctx_encrypt(_mongocrypt_tester_t *tester) {

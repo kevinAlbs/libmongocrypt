@@ -387,7 +387,10 @@ static bool _mongo_op_collinfo(mongocrypt_ctx_t *ctx, mongocrypt_binary_t *out) 
         BSON_ASSERT(bson_array_builder_append_utf8(bab, ectx->target_coll, -1));
         for (size_t i = 0; i < ectx->more_target_colls.len; i++) {
             const char *name = _mc_array_index(&ectx->more_target_colls, const char *, i);
-            BSON_ASSERT(bson_array_builder_append_utf8(bab, name, -1));
+            _mongocrypt_buffer_t *schema = _mc_array_index(&ectx->more_schemas, _mongocrypt_buffer_t *, i);
+            if (_mongocrypt_buffer_empty(schema)) {
+                BSON_ASSERT(bson_array_builder_append_utf8(bab, name, -1));
+            }
         }
         BSON_ASSERT(bson_append_array_builder_end(&in, bab));
         BSON_ASSERT(bson_append_document_end(cmd, &in));
@@ -996,8 +999,7 @@ static bool _create_markings_cmd_bson(mongocrypt_ctx_t *ctx, bson_t *out) {
             bson_free(ns);
 
             BSON_ASSERT(BSON_APPEND_DOCUMENT(&ns_to_doc, "schema", &jsonSchema));
-            BSON_ASSERT(
-                BSON_APPEND_BOOL(&ns_to_doc, "isRemoteSchema", true)); // TODO: check if schema is really remote.
+            BSON_ASSERT(BSON_APPEND_BOOL(&ns_to_doc, "isRemoteSchema", !ectx->used_local_schema));
             BSON_ASSERT(bson_append_document_end(&csfleEncryptionSchemas, &ns_to_doc));
         }
 
@@ -1020,8 +1022,8 @@ static bool _create_markings_cmd_bson(mongocrypt_ctx_t *ctx, bson_t *out) {
             bson_free(ns);
 
             BSON_ASSERT(BSON_APPEND_DOCUMENT(&ns_to_doc, "schema", &jsonSchema));
-            BSON_ASSERT(
-                BSON_APPEND_BOOL(&ns_to_doc, "isRemoteSchema", true)); // TODO: check if schema is really remote.
+            bool used_local_schema = _mc_array_index(&ectx->more_used_local_schema, bool, i);
+            BSON_ASSERT(BSON_APPEND_BOOL(&ns_to_doc, "isRemoteSchema", !used_local_schema));
             BSON_ASSERT(bson_append_document_end(&csfleEncryptionSchemas, &ns_to_doc));
         }
 
@@ -2399,6 +2401,7 @@ static void _cleanup(mongocrypt_ctx_t *ctx) {
         bson_free(buf);
     }
     _mc_array_destroy(&ectx->more_schemas);
+    _mc_array_destroy(&ectx->more_used_local_schema);
     _mongocrypt_buffer_cleanup(&ectx->list_collections_filter);
     _mongocrypt_buffer_cleanup(&ectx->schema);
     _mongocrypt_buffer_cleanup(&ectx->encrypted_field_config);
@@ -2435,6 +2438,49 @@ static bool _try_schema_from_schema_map(mongocrypt_ctx_t *ctx) {
             return _mongocrypt_ctx_fail_w_msg(ctx, "malformed schema map");
         }
         ectx->used_local_schema = true;
+    }
+
+    // Check if referenced schemas can be satisfied by schema map.
+    for (size_t i = 0; i < ectx->more_schemas.len; i++) {
+        _mongocrypt_buffer_t *schema = _mc_array_index(&ectx->more_schemas, _mongocrypt_buffer_t *, i);
+        if (_mongocrypt_buffer_empty(schema)) {
+            const char *more_target_coll = _mc_array_index(&ectx->more_target_colls, const char *, i);
+            // Get the target database. The target database may be the same as the command database.
+            const char *target_db;
+            if (ectx->target_db == NULL) {
+                // The target database is the same as the command database.
+                target_db = ectx->cmd_db;
+            }
+            char *more_target_ns = bson_strdup_printf("%s.%s", target_db, more_target_coll);
+
+            if (bson_iter_init_find(&iter, &schema_map, more_target_ns)) {
+                if (!_mongocrypt_buffer_copy_from_document_iter(schema, &iter)) {
+                    return _mongocrypt_ctx_fail_w_msg(ctx, "malformed schema map");
+                }
+                bool *used_local_schema = &_mc_array_index(&ectx->more_used_local_schema, bool, i);
+                *used_local_schema = true;
+            }
+
+            bson_free(more_target_ns);
+            break;
+        }
+    }
+
+    // If all schemas are found, can transition to need marking state.
+    bool need_more_schemas = false;
+    if (_mongocrypt_buffer_empty(&ectx->schema)) {
+        need_more_schemas = true;
+    } else {
+        for (size_t i = 0; i < ectx->more_schemas.len; i++) {
+            _mongocrypt_buffer_t *schema = _mc_array_index(&ectx->more_schemas, _mongocrypt_buffer_t *, i);
+            if (_mongocrypt_buffer_empty(schema)) {
+                need_more_schemas = true;
+                break;
+            }
+        }
+    }
+
+    if (!need_more_schemas) {
         ctx->state = MONGOCRYPT_CTX_NEED_MONGO_MARKINGS;
     }
 
@@ -3292,6 +3338,7 @@ bool mongocrypt_ctx_encrypt_init(mongocrypt_ctx_t *ctx, const char *db, int32_t 
     ectx->bypass_query_analysis = ctx->crypt->opts.bypass_query_analysis;
     _mc_array_init(&ectx->more_target_colls, sizeof(char *));
     _mc_array_init(&ectx->more_schemas, sizeof(_mongocrypt_buffer_t *));
+    _mc_array_init(&ectx->more_used_local_schema, sizeof(bool));
 
     if (!cmd || !cmd->data) {
         return _mongocrypt_ctx_fail_w_msg(ctx, "invalid command");
@@ -3346,6 +3393,8 @@ bool mongocrypt_ctx_encrypt_init(mongocrypt_ctx_t *ctx, const char *db, int32_t 
         for (size_t i = 0; i < ectx->more_target_colls.len; i++) {
             _mongocrypt_buffer_t *empty = bson_malloc0(sizeof(_mongocrypt_buffer_t));
             _mc_array_append_val(&ectx->more_schemas, empty);
+            bool bool_false = false;
+            _mc_array_append_val(&ectx->more_used_local_schema, bool_false);
         }
     }
 
