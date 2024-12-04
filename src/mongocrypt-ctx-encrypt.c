@@ -384,7 +384,9 @@ static bool _mongo_op_collinfo(mongocrypt_ctx_t *ctx, mongocrypt_binary_t *out) 
         BSON_ASSERT(BSON_APPEND_DOCUMENT_BEGIN(cmd, "name", &in));
         bson_array_builder_t *bab;
         BSON_ASSERT(BSON_APPEND_ARRAY_BUILDER_BEGIN(&in, "$in", &bab));
-        BSON_ASSERT(bson_array_builder_append_utf8(bab, ectx->target_coll, -1));
+        if (_mongocrypt_buffer_empty(&ectx->schema)) {
+            BSON_ASSERT(bson_array_builder_append_utf8(bab, ectx->target_coll, -1));
+        }
         for (size_t i = 0; i < ectx->more_target_colls.len; i++) {
             const char *name = _mc_array_index(&ectx->more_target_colls, const char *, i);
             _mongocrypt_buffer_t *schema = _mc_array_index(&ectx->more_schemas, _mongocrypt_buffer_t *, i);
@@ -2517,6 +2519,8 @@ static bool _fle2_try_encrypted_field_config_from_map(mongocrypt_ctx_t *ctx) {
     return true;
 }
 
+static bool _needs_more_schemas(mongocrypt_ctx_t *ctx);
+
 static bool _try_schema_from_cache(mongocrypt_ctx_t *ctx) {
     _mongocrypt_ctx_encrypt_t *ectx;
     bson_t *collinfo = NULL;
@@ -2538,9 +2542,47 @@ static bool _try_schema_from_cache(mongocrypt_ctx_t *ctx) {
             bson_destroy(collinfo);
             return _mongocrypt_ctx_fail(ctx);
         }
-        ctx->state = MONGOCRYPT_CTX_NEED_MONGO_MARKINGS;
-    } else {
-        /* we need to get it. */
+    }
+
+    bson_destroy(collinfo);
+
+    if (ectx->more_target_colls.len > 0) {
+        bson_t *more_collinfo = NULL;
+        for (size_t i = 0; i < ectx->more_target_colls.len; i++) {
+            const char *more_target_coll = _mc_array_index(&ectx->more_target_colls, const char *, i);
+            // Get the target database. The target database may be the same as the command database.
+
+            BSON_ASSERT(ectx->target_db == NULL); // Multiple collections implies all collections are on same database.
+            const char *target_db = ectx->cmd_db;
+            char *more_target_ns = bson_strdup_printf("%s.%s", target_db, more_target_coll);
+
+            printf("trying to load more_target_ns(%s) from cache ... \n", more_target_ns);
+
+            // Check if there is a listCollections result cached.
+            if (!_mongocrypt_cache_get(&ctx->crypt->cache_collinfo,
+                                       more_target_ns /* null terminated */,
+                                       (void **)&more_collinfo)) {
+                bson_free(more_target_ns);
+                return _mongocrypt_ctx_fail_w_msg(ctx, "failed to retrieve from cache");
+            }
+
+            if (more_collinfo) {
+                printf("trying to load more_target_ns(%s) from cache ... found\n", more_target_ns);
+                if (!_set_schema_from_collinfo(ctx, more_collinfo)) {
+                    bson_free(more_target_ns);
+                    bson_destroy(more_collinfo);
+                    return _mongocrypt_ctx_fail(ctx);
+                }
+            } else {
+                printf("trying to load more_target_ns(%s) from cache ... not found\n", more_target_ns);
+            }
+            bson_free(more_target_ns);
+        }
+        bson_destroy(more_collinfo);
+    }
+
+    if (_needs_more_schemas(ctx)) {
+        // Request schemas from server.
         ctx->state = MONGOCRYPT_CTX_NEED_MONGO_COLLINFO;
         if (ectx->target_db) {
             if (!ctx->crypt->opts.use_need_mongo_collinfo_with_db_state) {
@@ -2548,15 +2590,14 @@ static bool _try_schema_from_cache(mongocrypt_ctx_t *ctx) {
                     ctx,
                     "Fetching remote collection information on separate databases is not supported. Try "
                     "upgrading driver, or specify a local schemaMap or encryptedFieldsMap.");
-                bson_destroy(collinfo);
                 return false;
             }
             // Target database may differ from command database. Request collection info from target database.
             ctx->state = MONGOCRYPT_CTX_NEED_MONGO_COLLINFO_WITH_DB;
         }
+    } else {
+        ctx->state = MONGOCRYPT_CTX_NEED_MONGO_MARKINGS;
     }
-
-    bson_destroy(collinfo);
     return true;
 }
 

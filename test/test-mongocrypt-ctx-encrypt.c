@@ -5849,6 +5849,66 @@ static void _test_lookup(_mongocrypt_tester_t *tester) {
         mongocrypt_destroy(crypt);
     }
 #undef TF
+
+    // Test $lookup with mongocryptd when one schema is already cached.
+    {
+        mongocrypt_t *crypt = _mongocrypt_tester_mongocrypt(TESTER_MONGOCRYPT_DEFAULT);
+
+        // Do a self-lookup to add only "c1" to the cache.
+#define TF(suffix) TEST_FILE("./test/data/lookup/csfle-mongocryptd-self/" suffix)
+        {
+            mongocrypt_ctx_t *ctx = mongocrypt_ctx_new(crypt);
+            ASSERT_OK(mongocrypt_ctx_encrypt_init(ctx, "db", -1, TF("01-cmd.json")), ctx);
+            ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_COLLINFO);
+            {
+                mongocrypt_binary_t *expect = TF("02-listCollections-filter.json");
+                mongocrypt_binary_t *got = mongocrypt_binary_new();
+                ASSERT_OK(mongocrypt_ctx_mongo_op(ctx, got), ctx);
+                ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
+                mongocrypt_binary_destroy(got);
+
+                ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, TF("02-collInfo-c1.json")), ctx);
+                ASSERT_OK(mongocrypt_ctx_mongo_done(ctx), ctx);
+            }
+            mongocrypt_ctx_destroy(ctx);
+        }
+#undef TF
+
+#define TF(suffix) TEST_FILE("./test/data/lookup/csfle-mongocryptd/" suffix)
+        // Expect "c1" schema is not requested again.
+        {
+            mongocrypt_ctx_t *ctx = mongocrypt_ctx_new(crypt);
+
+            ASSERT_OK(mongocrypt_ctx_encrypt_init(ctx, "db", -1, TF("01-cmd.json")), ctx);
+
+            ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_COLLINFO);
+            {
+                mongocrypt_binary_t *expect = TEST_BSON(BSON_STR({"name" : {"$in" : ["c2"]}}));
+                mongocrypt_binary_t *got = mongocrypt_binary_new();
+                ASSERT_OK(mongocrypt_ctx_mongo_op(ctx, got), ctx);
+                ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
+                mongocrypt_binary_destroy(got);
+
+                // Feed remaining needed schema.
+                ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, TF("02-collInfo-c2.json")), ctx);
+                ASSERT_OK(mongocrypt_ctx_mongo_done(ctx), ctx);
+            }
+
+            ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_MARKINGS);
+            {
+                mongocrypt_binary_t *expect = TF("03-cmd-to-mongocryptd.json");
+                mongocrypt_binary_t *got = mongocrypt_binary_new();
+                ASSERT_OK(mongocrypt_ctx_mongo_op(ctx, got), ctx);
+                ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
+                mongocrypt_binary_destroy(got);
+            }
+
+            mongocrypt_ctx_destroy(ctx);
+        }
+        mongocrypt_destroy(crypt);
+    }
+#undef TF
+
     // TODO: Test $lookup with mixed CSFLE and QE schemas.
     // TODO: Test $lookup from a view.
     // TODO: Test $lookup from a collection with two $jsonSchema configured.
