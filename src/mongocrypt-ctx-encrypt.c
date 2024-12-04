@@ -2564,6 +2564,7 @@ static bool _try_schema_from_cache(mongocrypt_ctx_t *ctx) {
                     ctx,
                     "Fetching remote collection information on separate databases is not supported. Try "
                     "upgrading driver, or specify a local schemaMap or encryptedFieldsMap.");
+                bson_destroy(collinfo);
                 return false;
             }
             // Target database may differ from command database. Request collection info from target database.
