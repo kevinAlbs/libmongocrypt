@@ -3460,6 +3460,25 @@ bool mongocrypt_ctx_encrypt_init(mongocrypt_ctx_t *ctx, const char *db, int32_t 
 
 #define WIRE_VERSION_SERVER_6 17
 
+static bool _needs_more_schemas(mongocrypt_ctx_t *ctx) {
+    _mongocrypt_ctx_encrypt_t *ectx = (_mongocrypt_ctx_encrypt_t *)ctx;
+
+    // Check target collection.
+    if (_mongocrypt_buffer_empty(&ectx->encrypted_field_config) && _mongocrypt_buffer_empty(&ectx->schema)) {
+        return true;
+    }
+
+    // Check referenced collections.
+    for (size_t i = 0; i < ectx->more_schemas.len; i++) {
+        _mongocrypt_buffer_t *schema = _mc_array_index(&ectx->more_schemas, _mongocrypt_buffer_t *, i);
+        if (_mongocrypt_buffer_empty(schema)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 /* mongocrypt_ctx_encrypt_ismaster_done is called when:
  * 1. The max wire version of mongocryptd is known.
  * 2. The max wire version of mongocryptd is not required for the command.
@@ -3487,20 +3506,20 @@ static bool mongocrypt_ctx_encrypt_ismaster_done(mongocrypt_ctx_t *ctx) {
     if (!_fle2_try_encrypted_field_config_from_map(ctx)) {
         return false;
     }
-    if (_mongocrypt_buffer_empty(&ectx->encrypted_field_config)) {
+    if (_needs_more_schemas(ctx)) {
         if (!_try_schema_from_create_or_collMod_cmd(ctx)) {
             return false;
         }
 
         /* Check if we have a local schema from schema_map */
-        if (_mongocrypt_buffer_empty(&ectx->schema)) {
+        if (_needs_more_schemas(ctx)) {
             if (!_try_schema_from_schema_map(ctx)) {
                 return false;
             }
         }
 
         /* If we didn't have a local schema, try the cache. */
-        if (_mongocrypt_buffer_empty(&ectx->schema)) {
+        if (_needs_more_schemas(ctx)) {
             if (!_try_schema_from_cache(ctx)) {
                 return false;
             }
@@ -3509,12 +3528,12 @@ static bool mongocrypt_ctx_encrypt_ismaster_done(mongocrypt_ctx_t *ctx) {
         /* If we did not have a local or cached schema, check if this is a
          * "create" command. If it is a "create" command, do not run
          * "listCollections" to get a server-side schema. */
-        if (_mongocrypt_buffer_empty(&ectx->schema) && !_try_empty_schema_for_create(ctx)) {
+        if (_needs_more_schemas(ctx) && !_try_empty_schema_for_create(ctx)) {
             return false;
         }
 
         /* Otherwise, we need the the driver to fetch the schema. */
-        if (_mongocrypt_buffer_empty(&ectx->schema)) {
+        if (_needs_more_schemas(ctx)) {
             ctx->state = MONGOCRYPT_CTX_NEED_MONGO_COLLINFO;
             if (ectx->target_db) {
                 if (!ctx->crypt->opts.use_need_mongo_collinfo_with_db_state) {
