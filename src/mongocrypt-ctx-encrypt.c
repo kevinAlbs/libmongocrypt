@@ -465,13 +465,8 @@ static bool _set_schema_from_collinfo_for_more(mongocrypt_ctx_t *ctx, bson_t *co
     size_t index;
     {
         bool matched = false;
-
-        // Get the target database. The target database may be the same as the command database.
-        const char *target_db;
-        if (ectx->target_db == NULL) {
-            // The target database is the same as the command database.
-            target_db = ectx->cmd_db;
-        }
+        BSON_ASSERT(ectx->target_db == NULL); // Multiple collections implies all collections are on same database.
+        const char *target_db = ectx->cmd_db;
 
         // Find matching index.
         for (index = 0; index < ectx->more_target_colls.len; index++) {
@@ -567,11 +562,8 @@ static bool _set_schema_from_collinfo(mongocrypt_ctx_t *ctx, bson_t *collinfo) {
             return _mongocrypt_ctx_fail(ctx);
         }
 
-        const char *target_db;
-        if (ectx->target_db == NULL) {
-            // The target database is the same as the command database.
-            target_db = ectx->cmd_db;
-        }
+        BSON_ASSERT(ectx->target_db == NULL); // Multiple collections implies all collections are on same database.
+        const char *target_db = ectx->cmd_db;
         if (!(0 == strcmp(db, target_db) && 0 == strcmp(coll, ectx->target_coll))) {
             // Schema does not match the target collection. Assume it matches a referenced collection.
             bson_free(db);
@@ -973,12 +965,8 @@ static bool _create_markings_cmd_bson(mongocrypt_ctx_t *ctx, bson_t *out) {
     if (ectx->more_target_colls.len > 0) {
         mongocrypt_status_t *status = ctx->status;
 
-        // Get the target database. The target database may be the same as the command database.
-        const char *target_db;
-        if (ectx->target_db == NULL) {
-            // The target database is the same as the command database.
-            target_db = ectx->cmd_db;
-        }
+        BSON_ASSERT(ectx->target_db == NULL); // Multiple collections implies all collections are on same database.
+        const char *target_db = ectx->cmd_db;
 
         bson_t csfleEncryptionSchemas;
         BSON_ASSERT(BSON_APPEND_DOCUMENT_BEGIN(out, "csfleEncryptionSchemas", &csfleEncryptionSchemas));
@@ -2445,12 +2433,8 @@ static bool _try_schema_from_schema_map(mongocrypt_ctx_t *ctx) {
         _mongocrypt_buffer_t *schema = _mc_array_index(&ectx->more_schemas, _mongocrypt_buffer_t *, i);
         if (_mongocrypt_buffer_empty(schema)) {
             const char *more_target_coll = _mc_array_index(&ectx->more_target_colls, const char *, i);
-            // Get the target database. The target database may be the same as the command database.
-            const char *target_db;
-            if (ectx->target_db == NULL) {
-                // The target database is the same as the command database.
-                target_db = ectx->cmd_db;
-            }
+            BSON_ASSERT(ectx->target_db == NULL); // Multiple collections implies all collections are on same database.
+            const char *target_db = ectx->cmd_db;
             char *more_target_ns = bson_strdup_printf("%s.%s", target_db, more_target_coll);
 
             if (bson_iter_init_find(&iter, &schema_map, more_target_ns)) {
