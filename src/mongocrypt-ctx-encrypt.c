@@ -3224,6 +3224,8 @@ static bool find_collections_in_pipeline(bson_iter_t pipeline_iter,
                     }
                     if (!is_duplicate) {
                         _mc_array_append_val(colls, from);
+                    } else {
+                        bson_free(from);
                     }
                 }
 
