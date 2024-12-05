@@ -827,6 +827,32 @@ static bool _mongo_done_collinfo(mongocrypt_ctx_t *ctx) {
         bson_destroy(&empty_collinfo);
     }
 
+    for (size_t i = 0; i < ectx->more_schemas.len; i++) {
+        // Assert multiple collinfo protocol is enabled.
+        // The old protocol required a driver only pass the first matching collinfo.
+        // If the old protocol is used, libmongocrypt might incorrectly assume collections have no schema configured.
+        BSON_ASSERT(ctx->crypt->multiple_collinfo_enabled);
+
+        _mongocrypt_buffer_t *schema = _mc_array_index(&ectx->more_schemas, _mongocrypt_buffer_t *, i);
+        if (_mongocrypt_buffer_empty(schema)) {
+            bson_t empty_collinfo = BSON_INITIALIZER;
+
+            const char *coll = _mc_array_index(&ectx->more_target_colls, const char *, i);
+            char *ns = bson_strdup_printf("%s.%s", ectx->target_db ? ectx->target_db : ectx->cmd_db, coll);
+
+            /* If no collinfo was fed, apply and cache an empty collinfo. */
+            if (!_set_schema_from_collinfo(ctx, ns, &empty_collinfo)) {
+                bson_free(ns);
+                return false;
+            }
+            if (!_mongocrypt_cache_add_copy(&ctx->crypt->cache_collinfo, ns, &empty_collinfo, ctx->status)) {
+                bson_free(ns);
+                return _mongocrypt_ctx_fail(ctx);
+            }
+            bson_free(ns);
+        }
+    }
+
     if (!_fle2_collect_keys_for_deleteTokens(ctx)) {
         return false;
     }
