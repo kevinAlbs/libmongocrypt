@@ -404,50 +404,26 @@ static bool _mongo_op_collinfo(mongocrypt_ctx_t *ctx, mongocrypt_binary_t *out) 
     return true;
 }
 
-static bool _parse_ns_from_collinfo(bson_t *collinfo, char **db, char **coll, mongocrypt_status_t *status) {
-    *db = NULL;
-    *coll = NULL;
+static char *_parse_ns_from_collinfo(mongocrypt_ctx_t *ctx, bson_t *collinfo) {
+    bson_iter_t iter;
+    if (!bson_iter_init_find(&iter, collinfo, "name") || !BSON_ITER_HOLDS_UTF8(&iter)) {
+        _mongocrypt_ctx_fail_w_msg(ctx, "failed to find 'name' in collinfo");
 
-    bson_iter_t collinfo_iter;
-    if (!bson_iter_init(&collinfo_iter, collinfo)) {
-        return false;
+        return NULL;
     }
 
-    bson_iter_t idIndex_iter = collinfo_iter;
-    if (!bson_iter_find(&idIndex_iter, "idIndex") || !BSON_ITER_HOLDS_DOCUMENT(&idIndex_iter)) {
-        CLIENT_ERR("failed to find idIndex");
-        return false;
-    }
-    bson_iter_t ns_iter;
-    if (!bson_iter_recurse(&idIndex_iter, &ns_iter)) {
-        CLIENT_ERR("failed to recurse into idIndex");
-        return false;
-    }
-    if (!bson_iter_find(&ns_iter, "ns") || !BSON_ITER_HOLDS_UTF8(&ns_iter)) {
-        CLIENT_ERR("failed to find ns");
-        return false;
-    }
-
-    const char *ns = bson_iter_utf8(&ns_iter, NULL);
-
-    char *dot = strstr(ns, ".");
-    if (!dot) {
-        CLIENT_ERR("failed to find . in %s", ns);
-        return false;
-    }
-
-    *db = bson_strndup(ns, dot - ns);
-    *coll = bson_strdup(dot + 1);
-    return true;
+    _mongocrypt_ctx_encrypt_t *ectx = (_mongocrypt_ctx_encrypt_t *)ctx;
+    const char *coll = bson_iter_utf8(&iter, NULL);
+    return bson_strdup_printf("%s.%s", ectx->target_db ? ectx->target_db : ectx->cmd_db, coll);
 }
 
 // `_set_schema_from_collinfo_for_more` sets a schema for a referenced collection.
-static bool _set_schema_from_collinfo_for_more(mongocrypt_ctx_t *ctx, bson_t *collinfo) {
+static bool _set_schema_from_collinfo_for_more(mongocrypt_ctx_t *ctx, const char *ns, bson_t *collinfo) {
     BSON_ASSERT_PARAM(ctx);
+    BSON_ASSERT_PARAM(ns);
     BSON_ASSERT_PARAM(collinfo);
     mongocrypt_status_t *status = ctx->status;
     bool ok = true;
-    char *db = NULL, *coll = NULL;
 
     _mongocrypt_ctx_encrypt_t *ectx = (_mongocrypt_ctx_encrypt_t *)ctx;
     BSON_ASSERT(ectx->more_target_colls.len > 0);
@@ -455,11 +431,6 @@ static bool _set_schema_from_collinfo_for_more(mongocrypt_ctx_t *ctx, bson_t *co
 
     if (!bson_iter_init(&collinfo_iter, collinfo)) {
         CLIENT_ERR("failed to iterate into collection info");
-        goto fail;
-    }
-
-    // Get the collinfo collection and database.
-    if (!_parse_ns_from_collinfo(collinfo, &db, &coll, ctx->status)) {
         goto fail;
     }
 
@@ -473,13 +444,16 @@ static bool _set_schema_from_collinfo_for_more(mongocrypt_ctx_t *ctx, bson_t *co
         // Find matching index.
         for (index = 0; index < ectx->more_target_colls.len; index++) {
             const char *target_coll = _mc_array_index(&ectx->more_target_colls, const char *, index);
-            if (0 == strcmp(db, target_db) && 0 == strcmp(coll, target_coll)) {
+            char *target_ns = bson_strdup_printf("%s.%s", target_db, target_coll);
+            if (0 == strcmp(ns, target_ns)) {
                 matched = true;
+                bson_free(target_ns);
                 break;
             }
+            bson_free(target_ns);
         }
         if (!matched) {
-            CLIENT_ERR("given unexpected schema for %s.%s", db, coll);
+            CLIENT_ERR("given unexpected schema for %s", ns);
             goto fail;
         }
     }
@@ -488,14 +462,14 @@ static bool _set_schema_from_collinfo_for_more(mongocrypt_ctx_t *ctx, bson_t *co
     bson_iter_t type_iter = collinfo_iter;
     if (bson_iter_find(&type_iter, "type") && BSON_ITER_HOLDS_UTF8(&type_iter) && bson_iter_utf8(&type_iter, NULL)
         && 0 == strcmp("view", bson_iter_utf8(&type_iter, NULL))) {
-        CLIENT_ERR("cannot auto encrypt with view: %s.%s", db, coll);
+        CLIENT_ERR("cannot auto encrypt with view: %s", ns);
         goto fail;
     }
 
     // Check if collection is configured for QE.
     bson_iter_t encryptedFields_iter = collinfo_iter;
     if (bson_iter_find_descendant(&encryptedFields_iter, "options.encryptedFields", &encryptedFields_iter)) {
-        CLIENT_ERR("multiple schemas is not-yet supported for QE. Found encryptedFields for: %s.%s", db, coll);
+        CLIENT_ERR("multiple schemas is not-yet supported for QE. Found encryptedFields for: %s", ns);
         goto fail;
     }
 
@@ -512,23 +486,23 @@ static bool _set_schema_from_collinfo_for_more(mongocrypt_ctx_t *ctx, bson_t *co
             const char *key = bson_iter_key(&validator_iter);
             if (0 == strcmp("$jsonSchema", key)) {
                 if (found_jsonschema) {
-                    CLIENT_ERR("duplicate $jsonSchema fields found for: %s.%s", db, coll);
+                    CLIENT_ERR("duplicate $jsonSchema fields found for: %s", ns);
                     goto fail;
                 }
 
                 _mongocrypt_buffer_t *schema = _mc_array_index(&ectx->more_schemas, _mongocrypt_buffer_t *, index);
                 if (!_mongocrypt_buffer_empty(schema)) {
-                    CLIENT_ERR("got duplicate schemas for: %s.%s", db, coll);
+                    CLIENT_ERR("got duplicate schemas for: %s", ns);
                     goto fail;
                 }
 
                 if (!_mongocrypt_buffer_copy_from_document_iter(schema, &validator_iter)) {
-                    CLIENT_ERR("malformed $jsonSchema for: %s.%s", db, coll);
+                    CLIENT_ERR("malformed $jsonSchema for: %s", ns);
                     goto fail;
                 }
                 found_jsonschema = true;
             } else {
-                ectx->collinfo_has_siblings = true;
+                ectx->collinfo_has_siblings = true; // TODO: set per namespace or remove.
             }
         }
     }
@@ -538,12 +512,10 @@ fail:
     if (!ok) {
         _mongocrypt_ctx_fail(ctx);
     }
-    bson_free(db);
-    bson_free(coll);
     return ok;
 }
 
-static bool _set_schema_from_collinfo(mongocrypt_ctx_t *ctx, bson_t *collinfo) {
+static bool _set_schema_from_collinfo(mongocrypt_ctx_t *ctx, const char *ns, bson_t *collinfo) {
     bson_iter_t iter;
     _mongocrypt_ctx_encrypt_t *ectx;
     bool found_jsonschema = false;
@@ -555,25 +527,9 @@ static bool _set_schema_from_collinfo(mongocrypt_ctx_t *ctx, bson_t *collinfo) {
     ectx = (_mongocrypt_ctx_encrypt_t *)ctx;
 
     // Check if this schema is for the target collection or a referenced collection.
-    if (ectx->more_target_colls.len > 0) {
-        // Get the collection and database.
-        char *db, *coll;
-        if (!_parse_ns_from_collinfo(collinfo, &db, &coll, ctx->status)) {
-            bson_free(db);
-            bson_free(coll);
-            return _mongocrypt_ctx_fail(ctx);
-        }
-
+    if (0 != strcmp(ns, ectx->target_ns) && ectx->more_target_colls.len > 0) {
         BSON_ASSERT(ectx->target_db == NULL); // Multiple collections implies all collections are on same database.
-        const char *target_db = ectx->cmd_db;
-        if (!(0 == strcmp(db, target_db) && 0 == strcmp(coll, ectx->target_coll))) {
-            // Schema does not match the target collection. Assume it matches a referenced collection.
-            bson_free(db);
-            bson_free(coll);
-            return _set_schema_from_collinfo_for_more(ctx, collinfo);
-        }
-        bson_free(db);
-        bson_free(coll);
+        return _set_schema_from_collinfo_for_more(ctx, ns, collinfo);
     }
 
     /* Disallow views. */
@@ -827,9 +783,17 @@ static bool _mongo_feed_collinfo(mongocrypt_ctx_t *ctx, mongocrypt_binary_t *in)
         return _mongocrypt_ctx_fail(ctx);
     }
 
-    if (!_set_schema_from_collinfo(ctx, &as_bson)) {
+    // Get the collection and database.
+    char *ns = _parse_ns_from_collinfo(ctx, &as_bson);
+    if (!ns) {
         return false;
     }
+
+    if (!_set_schema_from_collinfo(ctx, ns, &as_bson)) {
+        bson_free(ns);
+        return false;
+    }
+    bson_free(ns);
 
     return true;
 }
@@ -846,7 +810,7 @@ static bool _mongo_done_collinfo(mongocrypt_ctx_t *ctx) {
         bson_t empty_collinfo = BSON_INITIALIZER;
 
         /* If no collinfo was fed, apply and cache an empty collinfo. */
-        if (!_set_schema_from_collinfo(ctx, &empty_collinfo)) {
+        if (!_set_schema_from_collinfo(ctx, ectx->target_ns, &empty_collinfo)) {
             bson_destroy(&empty_collinfo);
             return false;
         }
@@ -2538,7 +2502,7 @@ static bool _try_schema_from_cache(mongocrypt_ctx_t *ctx) {
     }
 
     if (collinfo) {
-        if (!_set_schema_from_collinfo(ctx, collinfo)) {
+        if (!_set_schema_from_collinfo(ctx, ectx->target_ns, collinfo)) {
             bson_destroy(collinfo);
             return _mongocrypt_ctx_fail(ctx);
         }
@@ -2568,7 +2532,7 @@ static bool _try_schema_from_cache(mongocrypt_ctx_t *ctx) {
 
             if (more_collinfo) {
                 printf("trying to load more_target_ns(%s) from cache ... found\n", more_target_ns);
-                if (!_set_schema_from_collinfo(ctx, more_collinfo)) {
+                if (!_set_schema_from_collinfo_for_more(ctx, more_target_ns, more_collinfo)) {
                     bson_free(more_target_ns);
                     bson_destroy(more_collinfo);
                     return _mongocrypt_ctx_fail(ctx);
