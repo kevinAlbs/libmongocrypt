@@ -507,6 +507,12 @@ static bool _set_schema_from_collinfo_for_more(mongocrypt_ctx_t *ctx, const char
         }
     }
 
+    if (!found_jsonschema) {
+        bson_t empty = BSON_INITIALIZER;
+        _mongocrypt_buffer_t *schema = _mc_array_index(&ectx->more_schemas, _mongocrypt_buffer_t *, index);
+        _mongocrypt_buffer_steal_from_bson(schema, &empty);
+    }
+
     ok = true;
 fail:
     if (!ok) {
