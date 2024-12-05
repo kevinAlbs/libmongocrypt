@@ -1022,7 +1022,7 @@ static void _test_encrypt_dupe_jsonschema(_mongocrypt_tester_t *tester) {
 
     BSON_ASSERT(MONGOCRYPT_CTX_NEED_MONGO_COLLINFO == mongocrypt_ctx_state(ctx));
     ASSERT_FAILS(mongocrypt_ctx_mongo_feed(ctx,
-                                           TEST_BSON("{'options': {'validator': { '$jsonSchema': {}, "
+                                           TEST_BSON("{'name': 'test', 'options': {'validator': { '$jsonSchema': {}, "
                                                      "'$jsonSchema': {} } } }")),
                  ctx,
                  "duplicate $jsonSchema");
@@ -1595,7 +1595,9 @@ static void _test_encrypt_with_bypassqueryanalysis(_mongocrypt_tester_t *tester)
 
         ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_COLLINFO);
         {
-            ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, TEST_BSON("{'options': {'encryptedFields': {'fields': []}}}")),
+            ASSERT_OK(mongocrypt_ctx_mongo_feed(
+                          ctx,
+                          TEST_BSON("{'name': 'coll', 'options': {'encryptedFields': {'fields': []}}}")),
                       ctx);
             ASSERT_OK(mongocrypt_ctx_mongo_done(ctx), ctx);
         }
