@@ -6008,6 +6008,30 @@ static void _test_lookup(_mongocrypt_tester_t *tester) {
         mongocrypt_destroy(crypt);
     }
 #undef TF
+
+    // Test $lookup with mongocryptd with only local schemas.
+#define TF(suffix) TEST_FILE("./test/data/lookup/csfle-mongocryptd-only-schemaMap/" suffix)
+    {
+        mongocrypt_t *crypt = _mongocrypt_tester_mongocrypt(TESTER_MONGOCRYPT_SKIP_INIT);
+        ASSERT_OK(mongocrypt_setopt_schema_map(crypt, TF("00-schemaMap.json")), crypt);
+        ASSERT_OK(mongocrypt_init(crypt), crypt);
+        mongocrypt_ctx_t *ctx = mongocrypt_ctx_new(crypt);
+
+        ASSERT_OK(mongocrypt_ctx_encrypt_init(ctx, "db", -1, TF("01-cmd.json")), ctx);
+
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_MARKINGS);
+        {
+            mongocrypt_binary_t *expect = TF("02-cmd-to-mongocryptd.json");
+            mongocrypt_binary_t *got = mongocrypt_binary_new();
+            ASSERT_OK(mongocrypt_ctx_mongo_op(ctx, got), ctx);
+            ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
+            mongocrypt_binary_destroy(got);
+        }
+
+        mongocrypt_ctx_destroy(ctx);
+        mongocrypt_destroy(crypt);
+    }
+#undef TF
     // TODO: Test $lookup from a collection $jsonSchema and a sibling validator configured.
     // TODO: Test $lookup with mongocryptd and feeding the same schema twice.
     // TODO: Test $lookup with mongocryptd and feeding a non-matching schema.
