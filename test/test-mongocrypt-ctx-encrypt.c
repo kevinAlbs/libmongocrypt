@@ -5941,14 +5941,41 @@ static void _test_lookup(_mongocrypt_tester_t *tester) {
         mongocrypt_destroy(crypt);
     }
 #undef TF
-    // TODO: Test $lookup with mixed CSFLE and QE schemas.
-    // TODO: Test $lookup from a view.
+    // Test $lookup from a view.
+#define TF(suffix) TEST_FILE("./test/data/lookup/csfle-mongocryptd-view/" suffix)
+    {
+        mongocrypt_t *crypt = _mongocrypt_tester_mongocrypt(TESTER_MONGOCRYPT_DEFAULT);
+        mongocrypt_ctx_t *ctx = mongocrypt_ctx_new(crypt);
+
+        ASSERT_OK(mongocrypt_ctx_encrypt_init(ctx, "db", -1, TF("01-cmd.json")), ctx);
+
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_COLLINFO);
+        {
+            mongocrypt_binary_t *expect = TF("02-listCollections-filter.json");
+            mongocrypt_binary_t *got = mongocrypt_binary_new();
+            ASSERT_OK(mongocrypt_ctx_mongo_op(ctx, got), ctx);
+            ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
+            mongocrypt_binary_destroy(got);
+
+            // Feed both needed schemas.
+            ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, TF("02-collInfo-c1.json")), ctx);
+            ASSERT_FAILS(mongocrypt_ctx_mongo_feed(ctx, TF("02-collInfo-v1.json")),
+                         ctx,
+                         "cannot auto encrypt with view");
+            ASSERT_FAILS(mongocrypt_ctx_mongo_done(ctx), ctx, "cannot auto encrypt with view");
+        }
+
+        mongocrypt_ctx_destroy(ctx);
+        mongocrypt_destroy(crypt);
+    }
+#undef TF
     // TODO: Test $lookup from a collection with two $jsonSchema configured.
     // TODO: Test $lookup from a collection $jsonSchema and a sibling validator configured.
     // TODO: Test $lookup with mongocryptd and feeding the same schema twice.
     // TODO: Test $lookup with mongocryptd and feeding a non-matching schema.
     // TODO: Test $lookup with mongocryptd and feeding a non-matching schema with same collection, but different db.
     // TODO: Test $lookup with mongocryptd with local schemas.
+    // TODO: Test $lookup with mixed CSFLE and QE schemas.
 }
 
 void _mongocrypt_tester_install_ctx_encrypt(_mongocrypt_tester_t *tester) {
