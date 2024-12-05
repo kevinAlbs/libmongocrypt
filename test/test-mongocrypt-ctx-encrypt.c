@@ -5911,6 +5911,36 @@ static void _test_lookup(_mongocrypt_tester_t *tester) {
     }
 #undef TF
 
+    // Test $lookup caches no collinfo results as empty schemas.
+    {
+        mongocrypt_t *crypt = _mongocrypt_tester_mongocrypt(TESTER_MONGOCRYPT_DEFAULT);
+
+        // Do a self-lookup to add only "c1" to the cache.
+#define TF(suffix) TEST_FILE("./test/data/lookup/csfle-mongocryptd/" suffix)
+        {
+            mongocrypt_ctx_t *ctx = mongocrypt_ctx_new(crypt);
+            ASSERT_OK(mongocrypt_ctx_encrypt_init(ctx, "db", -1, TF("01-cmd.json")), ctx);
+            ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_COLLINFO);
+            // Feed no collinfo results. Expect "c1" and "c2" to be cached as empty schemas.
+            ASSERT_OK(mongocrypt_ctx_mongo_done(ctx), ctx);
+            mongocrypt_ctx_destroy(ctx);
+        }
+#undef TF
+
+#define TF(suffix) TEST_FILE("./test/data/lookup/csfle-mongocryptd/" suffix)
+        // Expect "c1" schema is not requested again.
+        {
+            mongocrypt_ctx_t *ctx = mongocrypt_ctx_new(crypt);
+
+            ASSERT_OK(mongocrypt_ctx_encrypt_init(ctx, "db", -1, TF("01-cmd.json")), ctx);
+
+            // Expect no more schemas are needed (both empty).
+            ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_MARKINGS);
+            mongocrypt_ctx_destroy(ctx);
+        }
+        mongocrypt_destroy(crypt);
+    }
+#undef TF
     // TODO: Test $lookup with mixed CSFLE and QE schemas.
     // TODO: Test $lookup from a view.
     // TODO: Test $lookup from a collection with two $jsonSchema configured.
