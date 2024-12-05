@@ -423,7 +423,7 @@ static bool _set_schema_from_collinfo_for_more(mongocrypt_ctx_t *ctx, const char
     BSON_ASSERT_PARAM(ns);
     BSON_ASSERT_PARAM(collinfo);
     mongocrypt_status_t *status = ctx->status;
-    bool ok = true;
+    bool ok = false;
 
     _mongocrypt_ctx_encrypt_t *ectx = (_mongocrypt_ctx_encrypt_t *)ctx;
     BSON_ASSERT(ectx->more_target_colls.len > 0);
