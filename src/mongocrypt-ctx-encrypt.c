@@ -3436,6 +3436,15 @@ bool mongocrypt_ctx_encrypt_init(mongocrypt_ctx_t *ctx, const char *db, int32_t 
             _mongocrypt_ctx_fail(ctx);
             return false;
         }
+
+        if (ectx->more_target_colls.len > 0) {
+            if (!ctx->crypt->multiple_collinfo_enabled) {
+                return _mongocrypt_ctx_fail_w_msg(
+                    ctx,
+                    "aggregate includes a $lookup stage, but libmongocrypt is not configured to support encrypting a "
+                    "command with multiple collections");
+            }
+        }
         // Create associated entries for schemas.
         for (size_t i = 0; i < ectx->more_target_colls.len; i++) {
             _mongocrypt_buffer_t *empty = bson_malloc0(sizeof(_mongocrypt_buffer_t));

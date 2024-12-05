@@ -522,6 +522,7 @@ mongocrypt_t *_mongocrypt_tester_mongocrypt(tester_mongocrypt_flags flags) {
     if (flags & TESTER_MONGOCRYPT_WITH_SHORT_CACHE) {
         ASSERT(mongocrypt_setopt_key_expiration(crypt, 1));
     }
+    ASSERT_OK(mongocrypt_setopt_enable_multiple_collinfo(crypt), crypt);
     if (!(flags & TESTER_MONGOCRYPT_SKIP_INIT)) {
         ASSERT_OK(mongocrypt_init(crypt), crypt);
     }
