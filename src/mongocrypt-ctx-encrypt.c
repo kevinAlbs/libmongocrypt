@@ -389,7 +389,7 @@ static bool _mongo_op_collinfo(mongocrypt_ctx_t *ctx, mongocrypt_binary_t *out) 
         }
         for (size_t i = 0; i < ectx->more_target_colls.len; i++) {
             const char *name = _mc_array_index(&ectx->more_target_colls, const char *, i);
-            _mongocrypt_buffer_t *schema = _mc_array_index(&ectx->more_schemas, _mongocrypt_buffer_t *, i);
+            _mongocrypt_buffer_t *schema = &_mc_array_index(&ectx->more_schemas, _mongocrypt_buffer_t, i);
             if (_mongocrypt_buffer_empty(schema)) {
                 BSON_ASSERT(bson_array_builder_append_utf8(bab, name, -1));
             }
@@ -490,7 +490,7 @@ static bool _set_schema_from_collinfo_for_more(mongocrypt_ctx_t *ctx, const char
                     goto fail;
                 }
 
-                _mongocrypt_buffer_t *schema = _mc_array_index(&ectx->more_schemas, _mongocrypt_buffer_t *, index);
+                _mongocrypt_buffer_t *schema = &_mc_array_index(&ectx->more_schemas, _mongocrypt_buffer_t, index);
                 if (!_mongocrypt_buffer_empty(schema)) {
                     CLIENT_ERR("got duplicate schemas for: %s", ns);
                     goto fail;
@@ -509,7 +509,7 @@ static bool _set_schema_from_collinfo_for_more(mongocrypt_ctx_t *ctx, const char
 
     if (!found_jsonschema) {
         bson_t empty = BSON_INITIALIZER;
-        _mongocrypt_buffer_t *schema = _mc_array_index(&ectx->more_schemas, _mongocrypt_buffer_t *, index);
+        _mongocrypt_buffer_t *schema = &_mc_array_index(&ectx->more_schemas, _mongocrypt_buffer_t, index);
         _mongocrypt_buffer_steal_from_bson(schema, &empty);
     }
 
@@ -833,7 +833,7 @@ static bool _mongo_done_collinfo(mongocrypt_ctx_t *ctx) {
         // If the old protocol is used, libmongocrypt might incorrectly assume collections have no schema configured.
         BSON_ASSERT(ctx->crypt->multiple_collinfo_enabled);
 
-        _mongocrypt_buffer_t *schema = _mc_array_index(&ectx->more_schemas, _mongocrypt_buffer_t *, i);
+        _mongocrypt_buffer_t *schema = &_mc_array_index(&ectx->more_schemas, _mongocrypt_buffer_t, i);
         if (_mongocrypt_buffer_empty(schema)) {
             bson_t empty_collinfo = BSON_INITIALIZER;
 
@@ -992,7 +992,7 @@ static bool _create_markings_cmd_bson(mongocrypt_ctx_t *ctx, bson_t *out) {
         // Append the referenced collection schemas.
         for (size_t i = 0; i < ectx->more_target_colls.len; i++) {
             const char *target_coll = _mc_array_index(&ectx->more_target_colls, char *, i);
-            _mongocrypt_buffer_t *jsonSchema_buf = _mc_array_index(&ectx->more_schemas, _mongocrypt_buffer_t *, i);
+            _mongocrypt_buffer_t *jsonSchema_buf = &_mc_array_index(&ectx->more_schemas, _mongocrypt_buffer_t, i);
             bson_t jsonSchema;
 
             // We have a schema buffer. View it as BSON:
@@ -2382,9 +2382,8 @@ static void _cleanup(mongocrypt_ctx_t *ctx) {
     }
     _mc_array_destroy(&ectx->more_target_colls);
     for (size_t i = 0; i < ectx->more_schemas.len; i++) {
-        _mongocrypt_buffer_t *buf = _mc_array_index(&ectx->more_schemas, _mongocrypt_buffer_t *, i);
+        _mongocrypt_buffer_t *buf = &_mc_array_index(&ectx->more_schemas, _mongocrypt_buffer_t, i);
         _mongocrypt_buffer_cleanup(buf);
-        bson_free(buf);
     }
     _mc_array_destroy(&ectx->more_schemas);
     _mc_array_destroy(&ectx->more_used_local_schema);
@@ -2428,7 +2427,7 @@ static bool _try_schema_from_schema_map(mongocrypt_ctx_t *ctx) {
 
     // Check if referenced schemas can be satisfied by schema map.
     for (size_t i = 0; i < ectx->more_schemas.len; i++) {
-        _mongocrypt_buffer_t *schema = _mc_array_index(&ectx->more_schemas, _mongocrypt_buffer_t *, i);
+        _mongocrypt_buffer_t *schema = &_mc_array_index(&ectx->more_schemas, _mongocrypt_buffer_t, i);
         if (_mongocrypt_buffer_empty(schema)) {
             const char *more_target_coll = _mc_array_index(&ectx->more_target_colls, const char *, i);
             BSON_ASSERT(ectx->target_db == NULL); // Multiple collections implies all collections are on same database.
@@ -2454,7 +2453,7 @@ static bool _try_schema_from_schema_map(mongocrypt_ctx_t *ctx) {
         need_more_schemas = true;
     } else {
         for (size_t i = 0; i < ectx->more_schemas.len; i++) {
-            _mongocrypt_buffer_t *schema = _mc_array_index(&ectx->more_schemas, _mongocrypt_buffer_t *, i);
+            _mongocrypt_buffer_t *schema = &_mc_array_index(&ectx->more_schemas, _mongocrypt_buffer_t, i);
             if (_mongocrypt_buffer_empty(schema)) {
                 need_more_schemas = true;
                 break;
@@ -3380,7 +3379,7 @@ bool mongocrypt_ctx_encrypt_init(mongocrypt_ctx_t *ctx, const char *db, int32_t 
     ctx->vtable.cleanup = _cleanup;
     ectx->bypass_query_analysis = ctx->crypt->opts.bypass_query_analysis;
     _mc_array_init(&ectx->more_target_colls, sizeof(char *));
-    _mc_array_init(&ectx->more_schemas, sizeof(_mongocrypt_buffer_t *));
+    _mc_array_init(&ectx->more_schemas, sizeof(_mongocrypt_buffer_t));
     _mc_array_init(&ectx->more_used_local_schema, sizeof(bool));
 
     if (!cmd || !cmd->data) {
@@ -3503,7 +3502,7 @@ static bool _needs_more_schemas(mongocrypt_ctx_t *ctx) {
 
     // Check referenced collections.
     for (size_t i = 0; i < ectx->more_schemas.len; i++) {
-        _mongocrypt_buffer_t *schema = _mc_array_index(&ectx->more_schemas, _mongocrypt_buffer_t *, i);
+        _mongocrypt_buffer_t *schema = &_mc_array_index(&ectx->more_schemas, _mongocrypt_buffer_t, i);
         if (_mongocrypt_buffer_empty(schema)) {
             return true;
         }
