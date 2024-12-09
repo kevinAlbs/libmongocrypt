@@ -469,8 +469,24 @@ static bool _set_schema_from_collinfo_for_more(mongocrypt_ctx_t *ctx, const char
     // Check if collection is configured for QE.
     bson_iter_t encryptedFields_iter = collinfo_iter;
     if (bson_iter_find_descendant(&encryptedFields_iter, "options.encryptedFields", &encryptedFields_iter)) {
-        CLIENT_ERR("multiple schemas is not-yet supported for QE. Found encryptedFields for: %s", ns);
-        goto fail;
+        if (!BSON_ITER_HOLDS_DOCUMENT(&encryptedFields_iter)) {
+            return _mongocrypt_ctx_fail_w_msg(ctx, "options.encryptedFields is not a BSON document");
+        }
+        _mongocrypt_buffer_t *encrypted_field_config =
+            &_mc_array_index(&ectx->more_encrypted_field_config, _mongocrypt_buffer_t, index);
+        if (!_mongocrypt_buffer_copy_from_document_iter(encrypted_field_config, &encryptedFields_iter)) {
+            return _mongocrypt_ctx_fail_w_msg(ctx, "unable to copy options.encryptedFields");
+        }
+        bson_t efc_bson;
+        if (!_mongocrypt_buffer_to_bson(encrypted_field_config, &efc_bson)) {
+            return _mongocrypt_ctx_fail_w_msg(ctx, "unable to create BSON from encrypted_field_config");
+        }
+
+        mc_EncryptedFieldConfig_t *efc = &_mc_array_index(&ectx->more_efc, mc_EncryptedFieldConfig_t, index);
+        if (!mc_EncryptedFieldConfig_parse(efc, &efc_bson, ctx->status, ctx->crypt->opts.use_range_v2)) {
+            _mongocrypt_ctx_fail(ctx);
+            return false;
+        }
     }
 
     // Check if collection is configured for CSFLE.
@@ -2387,6 +2403,17 @@ static void _cleanup(mongocrypt_ctx_t *ctx) {
     }
     _mc_array_destroy(&ectx->more_schemas);
     _mc_array_destroy(&ectx->more_used_local_schema);
+    for (size_t i = 0; i < ectx->more_encrypted_field_config.len; i++) {
+        _mongocrypt_buffer_t *buf = _mc_array_index(&ectx->more_encrypted_field_config, _mongocrypt_buffer_t *, i);
+        _mongocrypt_buffer_cleanup(buf);
+        bson_free(buf);
+    }
+    _mc_array_destroy(&ectx->more_encrypted_field_config);
+    for (size_t i = 0; i < ectx->more_efc.len; i++) {
+        mc_EncryptedFieldConfig_t efc = _mc_array_index(&ectx->more_efc, mc_EncryptedFieldConfig_t, i);
+        mc_EncryptedFieldConfig_cleanup(&efc);
+    }
+    _mc_array_destroy(&ectx->more_efc);
     _mongocrypt_buffer_cleanup(&ectx->list_collections_filter);
     _mongocrypt_buffer_cleanup(&ectx->schema);
     _mongocrypt_buffer_cleanup(&ectx->encrypted_field_config);
@@ -3381,6 +3408,8 @@ bool mongocrypt_ctx_encrypt_init(mongocrypt_ctx_t *ctx, const char *db, int32_t 
     _mc_array_init(&ectx->more_target_colls, sizeof(char *));
     _mc_array_init(&ectx->more_schemas, sizeof(_mongocrypt_buffer_t));
     _mc_array_init(&ectx->more_used_local_schema, sizeof(bool));
+    _mc_array_init(&ectx->more_encrypted_field_config, sizeof(_mongocrypt_buffer_t));
+    _mc_array_init(&ectx->more_efc, sizeof(mc_EncryptedFieldConfig_t));
 
     if (!cmd || !cmd->data) {
         return _mongocrypt_ctx_fail_w_msg(ctx, "invalid command");
@@ -3442,10 +3471,14 @@ bool mongocrypt_ctx_encrypt_init(mongocrypt_ctx_t *ctx, const char *db, int32_t 
         }
         // Create associated entries for schemas.
         for (size_t i = 0; i < ectx->more_target_colls.len; i++) {
-            _mongocrypt_buffer_t *empty = bson_malloc0(sizeof(_mongocrypt_buffer_t));
+            _mongocrypt_buffer_t empty;
+            _mongocrypt_buffer_init(&empty);
             _mc_array_append_val(&ectx->more_schemas, empty);
             bool bool_false = false;
             _mc_array_append_val(&ectx->more_used_local_schema, bool_false);
+            _mc_array_append_val(&ectx->more_encrypted_field_config, empty);
+            mc_EncryptedFieldConfig_t empty_efc = {0};
+            _mc_array_append_val(&ectx->more_efc, empty_efc);
         }
     }
 
@@ -3503,7 +3536,9 @@ static bool _needs_more_schemas(mongocrypt_ctx_t *ctx) {
     // Check referenced collections.
     for (size_t i = 0; i < ectx->more_schemas.len; i++) {
         _mongocrypt_buffer_t *schema = &_mc_array_index(&ectx->more_schemas, _mongocrypt_buffer_t, i);
-        if (_mongocrypt_buffer_empty(schema)) {
+        _mongocrypt_buffer_t *encrypted_field_config =
+            &_mc_array_index(&ectx->more_encrypted_field_config, _mongocrypt_buffer_t, i);
+        if (_mongocrypt_buffer_empty(encrypted_field_config) && _mongocrypt_buffer_empty(schema)) {
             return true;
         }
     }
