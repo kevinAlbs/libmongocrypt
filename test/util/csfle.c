@@ -73,6 +73,18 @@ static mongocrypt_t *crypt_new(bson_t *args) {
     }
     bson_destroy(schema_map);
 
+    {
+        bson_t *encrypted_fields_map = bson_get_json(args, "encrypted_fields_map_file");
+        if (encrypted_fields_map) {
+            bin = util_bson_to_bin(encrypted_fields_map);
+            if (!mongocrypt_setopt_encrypted_field_config_map(crypt, bin)) {
+                ERREXIT_MONGOCRYPT(crypt);
+            }
+            mongocrypt_binary_destroy(bin);
+        }
+        bson_destroy(encrypted_fields_map);
+    }
+
     if (!mongocrypt_init(crypt)) {
         ERREXIT_MONGOCRYPT(crypt);
     }
