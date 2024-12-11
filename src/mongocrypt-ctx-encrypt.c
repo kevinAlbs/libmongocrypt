@@ -2156,10 +2156,9 @@ static bool _fle2_finalize(mongocrypt_ctx_t *ctx, mongocrypt_binary_t *out) {
         }
         _mc_array_destroy(&listof_deleteTokens);
 
-        bson_destroy(&converted);
-        bson_destroy(deleteTokens);
-
         if (!ok) {
+            bson_destroy(&converted);
+            bson_destroy(deleteTokens);
             return _mongocrypt_ctx_fail(ctx);
         }
     }
