@@ -2404,9 +2404,8 @@ static void _cleanup(mongocrypt_ctx_t *ctx) {
     _mc_array_destroy(&ectx->more_schemas);
     _mc_array_destroy(&ectx->more_used_local_schema);
     for (size_t i = 0; i < ectx->more_encrypted_field_config.len; i++) {
-        _mongocrypt_buffer_t *buf = _mc_array_index(&ectx->more_encrypted_field_config, _mongocrypt_buffer_t *, i);
+        _mongocrypt_buffer_t *buf = &_mc_array_index(&ectx->more_encrypted_field_config, _mongocrypt_buffer_t, i);
         _mongocrypt_buffer_cleanup(buf);
-        bson_free(buf);
     }
     _mc_array_destroy(&ectx->more_encrypted_field_config);
     for (size_t i = 0; i < ectx->more_efc.len; i++) {
