@@ -98,6 +98,98 @@ static void _load_json(_mongocrypt_tester_t *tester, const char *path) {
     TEST_DATA_COUNT_INC(tester->file_count);
 }
 
+// Function to remove comments from JSONC
+#define BUFFER_SIZE 1024
+
+// Function to check if a character is whitespace
+bool is_whitespace(char c) {
+    return c == ' ' || c == '\t' || c == '\n' || c == '\r';
+}
+
+// Function to remove comments from JSONC
+void remove_comments(FILE *input, FILE *output) {
+    char buffer[BUFFER_SIZE];
+    bool in_string = false;
+    bool in_single_line_comment = false;
+    bool in_multi_line_comment = false;
+    while (fgets(buffer, BUFFER_SIZE, input)) {
+        for (int i = 0; buffer[i] != '\0'; i++) {
+            char c = buffer[i];
+            if (in_single_line_comment) {
+                if (c == '\n') {
+                    in_single_line_comment = false;
+                    fputc(c, output);
+                }
+                continue;
+            }
+            if (in_multi_line_comment) {
+                if (c == '*' && buffer[i + 1] == '/') {
+                    in_multi_line_comment = false;
+                    i++; // Skip the '/'
+                }
+                continue;
+            }
+            if (in_string) {
+                if (c == '\\' && buffer[i + 1] == '"') {
+                    fputc(c, output);
+                    i++; // Skip the escaped quote
+                } else if (c == '"') {
+                    in_string = false;
+                }
+                fputc(c, output);
+                continue;
+            }
+            if (c == '"') {
+                in_string = true;
+                fputc(c, output);
+                continue;
+            }
+            if (c == '/' && buffer[i + 1] == '/') {
+                in_single_line_comment = true;
+                i++; // Skip the second '/'
+                continue;
+            }
+            if (c == '/' && buffer[i + 1] == '*') {
+                in_multi_line_comment = true;
+                i++; // Skip the '*'
+                continue;
+            }
+            if (!is_whitespace(c)) {
+                fputc(c, output);
+            }
+        }
+    }
+}
+
+static void _load_jsonc(_mongocrypt_tester_t *tester, const char *path) {
+    bson_t as_bson;
+    _mongocrypt_buffer_t *buf;
+
+    // Strip comments.
+    char *stripped_path = bson_strdup_printf("%s.stripped", path);
+    {
+        FILE *stripped_file = fopen(stripped_path, "w");
+        ASSERT(stripped_file);
+
+        FILE *input_file = fopen(path, "r");
+        ASSERT(input_file);
+
+        remove_comments(input_file, stripped_file);
+        fclose(stripped_file);
+        fclose(input_file);
+    }
+
+    // Parse as JSON.
+    _load_json_as_bson(stripped_path, &as_bson);
+    bson_free(stripped_path);
+    unlink(stripped_path);
+
+    buf = &tester->file_bufs[tester->file_count];
+    _mongocrypt_buffer_steal_from_bson(buf, &as_bson);
+    tester->file_paths[tester->file_count] = bson_strdup(path);
+    TEST_DATA_COUNT_INC(tester->file_count);
+}
+
 static void _load_http(_mongocrypt_tester_t *tester, const char *path) {
     int fd;
     char *contents;
@@ -188,7 +280,9 @@ mongocrypt_binary_t *_mongocrypt_tester_file(_mongocrypt_tester_t *tester, const
     }
 
     /* File not found, load it. */
-    if (strstr(path, ".json")) {
+    if (strstr(path, ".jsonc")) {
+        _load_jsonc(tester, path);
+    } else if (strstr(path, ".json")) {
         _load_json(tester, path);
     } else if (strstr(path, ".txt")) {
         _load_http(tester, path);
