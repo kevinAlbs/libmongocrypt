@@ -2105,7 +2105,7 @@ static bool _fle2_finalize(mongocrypt_ctx_t *ctx, mongocrypt_binary_t *out) {
         mc_array_t listof_deleteTokens;
         {
             _mc_array_init(&listof_deleteTokens, sizeof(bson_t *));
-            bson_t *entry = deleteTokens;
+            bson_t *entry = deleteTokens ? bson_copy(deleteTokens) : NULL;
             _mc_array_append_val(&listof_deleteTokens, entry);
         }
 
