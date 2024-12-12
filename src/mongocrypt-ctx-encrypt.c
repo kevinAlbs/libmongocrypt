@@ -971,6 +971,7 @@ static bool _fle2_mongo_op_markings(mongocrypt_ctx_t *ctx, bson_t *out) {
 
         _mongocrypt_buffer_t efc_buf = _mc_array_index(&ectx->more_encrypted_field_config, _mongocrypt_buffer_t, i);
         bson_t efc_bson;
+        BSON_ASSERT(efc_buf.data); // Should be set.
         BSON_ASSERT(_mongocrypt_buffer_to_bson(&efc_buf, &efc_bson));
         bson_t *efc_bson_entry = bson_copy(&efc_bson);
         _mc_array_append_val(&listof_encrypted_field_config_bson, efc_bson_entry);
@@ -1088,6 +1089,7 @@ static bool _create_markings_cmd_bson(mongocrypt_ctx_t *ctx, bson_t *out) {
         for (size_t i = 0; i < ectx->more_target_colls.len; i++) {
             const char *target_coll = _mc_array_index(&ectx->more_target_colls, char *, i);
             _mongocrypt_buffer_t *jsonSchema_buf = &_mc_array_index(&ectx->more_schemas, _mongocrypt_buffer_t, i);
+            BSON_ASSERT(jsonSchema_buf->data); // Should be set.
             bson_t jsonSchema;
 
             // We have a schema buffer. View it as BSON:
