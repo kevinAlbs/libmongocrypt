@@ -399,13 +399,14 @@ static bool _mongo_op_collinfo(mongocrypt_ctx_t *ctx, mongocrypt_binary_t *out) 
         BSON_ASSERT(BSON_APPEND_DOCUMENT_BEGIN(cmd, "name", &in));
         bson_array_builder_t *bab;
         BSON_ASSERT(BSON_APPEND_ARRAY_BUILDER_BEGIN(&in, "$in", &bab));
-        if (_mongocrypt_buffer_empty(&ectx->schema)) {
+        if (_mongocrypt_buffer_empty(&ectx->schema) && _mongocrypt_buffer_empty(&ectx->encrypted_field_config)) {
             BSON_ASSERT(bson_array_builder_append_utf8(bab, ectx->target_coll, -1));
         }
         for (size_t i = 0; i < ectx->more_target_colls.len; i++) {
             const char *name = _mc_array_index(&ectx->more_target_colls, const char *, i);
             _mongocrypt_buffer_t *schema = &_mc_array_index(&ectx->more_schemas, _mongocrypt_buffer_t, i);
-            if (_mongocrypt_buffer_empty(schema)) {
+            _mongocrypt_buffer_t *ef = &_mc_array_index(&ectx->more_encrypted_field_config, _mongocrypt_buffer_t, i);
+            if (_mongocrypt_buffer_empty(schema) && _mongocrypt_buffer_empty(ef)) {
                 BSON_ASSERT(bson_array_builder_append_utf8(bab, name, -1));
             }
         }
@@ -2667,10 +2668,43 @@ static bool _fle2_try_encrypted_field_config_from_map(mongocrypt_ctx_t *ctx) {
             _mongocrypt_ctx_fail(ctx);
             return false;
         }
-        ctx->state = MONGOCRYPT_CTX_NEED_MONGO_MARKINGS;
     }
 
-    /* No encrypted_field_config found in map. */
+    for (size_t i = 0; i < ectx->more_encrypted_field_config.len; i++) {
+        _mongocrypt_buffer_t *ef_buf = &_mc_array_index(&ectx->more_encrypted_field_config, _mongocrypt_buffer_t, i);
+        if (_mongocrypt_buffer_empty(ef_buf)) {
+            const char *more_target_coll = _mc_array_index(&ectx->more_target_colls, const char *, i);
+            BSON_ASSERT(ectx->target_db == NULL); // Multiple collections implies all collections are on same database.
+            const char *target_db = ectx->cmd_db;
+            char *more_target_ns = bson_strdup_printf("%s.%s", target_db, more_target_coll);
+
+            if (bson_iter_init_find(&iter, &encrypted_field_config_map, more_target_ns)) {
+                if (!_mongocrypt_buffer_copy_from_document_iter(ef_buf, &iter)) {
+                    return _mongocrypt_ctx_fail_w_msg(
+                        ctx,
+                        "unable to copy encrypted_field_config from encrypted_field_config_map");
+                }
+
+                bson_t efc_bson;
+                if (!_mongocrypt_buffer_to_bson(ef_buf, &efc_bson)) {
+                    return _mongocrypt_ctx_fail_w_msg(ctx, "unable to create BSON from encrypted_field_config");
+                }
+
+                mc_EncryptedFieldConfig_t *efc = &_mc_array_index(&ectx->more_efc, mc_EncryptedFieldConfig_t, i);
+                if (!mc_EncryptedFieldConfig_parse(efc, &efc_bson, ctx->status, ctx->crypt->opts.use_range_v2)) {
+                    _mongocrypt_ctx_fail(ctx);
+                    return false;
+                }
+            }
+
+            bson_free(more_target_ns);
+            break;
+        }
+    }
+
+    if (!_needs_more_schemas(ctx)) {
+        ctx->state = MONGOCRYPT_CTX_NEED_MONGO_MARKINGS;
+    }
     return true;
 }
 
