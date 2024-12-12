@@ -2567,6 +2567,8 @@ static void _cleanup(mongocrypt_ctx_t *ctx) {
     mc_EncryptedFieldConfig_cleanup(&ectx->efc);
 }
 
+static bool _needs_more_schemas(mongocrypt_ctx_t *ctx);
+
 static bool _try_schema_from_schema_map(mongocrypt_ctx_t *ctx) {
     mongocrypt_t *crypt;
     _mongocrypt_ctx_encrypt_t *ectx;
@@ -2617,20 +2619,7 @@ static bool _try_schema_from_schema_map(mongocrypt_ctx_t *ctx) {
     }
 
     // If all schemas are found, can transition to need marking state.
-    bool need_more_schemas = false;
-    if (_mongocrypt_buffer_empty(&ectx->schema)) {
-        need_more_schemas = true;
-    } else {
-        for (size_t i = 0; i < ectx->more_schemas.len; i++) {
-            _mongocrypt_buffer_t *schema = &_mc_array_index(&ectx->more_schemas, _mongocrypt_buffer_t, i);
-            if (_mongocrypt_buffer_empty(schema)) {
-                need_more_schemas = true;
-                break;
-            }
-        }
-    }
-
-    if (!need_more_schemas) {
+    if (!_needs_more_schemas(ctx)) {
         ctx->state = MONGOCRYPT_CTX_NEED_MONGO_MARKINGS;
     }
 
@@ -2682,8 +2671,6 @@ static bool _fle2_try_encrypted_field_config_from_map(mongocrypt_ctx_t *ctx) {
     /* No encrypted_field_config found in map. */
     return true;
 }
-
-static bool _needs_more_schemas(mongocrypt_ctx_t *ctx);
 
 static bool _try_schema_from_cache(mongocrypt_ctx_t *ctx) {
     _mongocrypt_ctx_encrypt_t *ectx;
