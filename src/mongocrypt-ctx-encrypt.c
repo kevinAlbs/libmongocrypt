@@ -918,7 +918,7 @@ static const char *_mongo_db_collinfo(mongocrypt_ctx_t *ctx) {
 
 static bool _fle2_mongo_op_markings(mongocrypt_ctx_t *ctx, bson_t *out) {
     _mongocrypt_ctx_encrypt_t *ectx;
-    bson_t cmd_bson = BSON_INITIALIZER, encrypted_field_config_bson = BSON_INITIALIZER;
+    bson_t encrypted_field_config_bson = BSON_INITIALIZER;
 
     BSON_ASSERT_PARAM(ctx);
     BSON_ASSERT_PARAM(out);
@@ -927,10 +927,6 @@ static bool _fle2_mongo_op_markings(mongocrypt_ctx_t *ctx, bson_t *out) {
 
     BSON_ASSERT(ctx->state == MONGOCRYPT_CTX_NEED_MONGO_MARKINGS);
     BSON_ASSERT(context_uses_fle2(ctx));
-
-    if (!_mongocrypt_buffer_to_bson(&ectx->original_cmd, &cmd_bson)) {
-        return _mongocrypt_ctx_fail_w_msg(ctx, "unable to convert original_cmd to BSON");
-    }
 
     if (!_mongocrypt_buffer_to_bson(&ectx->encrypted_field_config, &encrypted_field_config_bson)) {
         return _mongocrypt_ctx_fail_w_msg(ctx, "unable to convert encrypted_field_config to BSON");
@@ -981,11 +977,6 @@ static bool _fle2_mongo_op_markings(mongocrypt_ctx_t *ctx, bson_t *out) {
         _mc_array_append_val(&listof_deleteTokens, deleteTokens);
     }
 
-    // If input command included $db, do not include it in the command to
-    // mongocryptd. Drivers are expected to append $db in the RunCommand helper
-    // used to send the command.
-    bson_init(out);
-    bson_copy_to_excluding_noinit(&cmd_bson, out, "$db", NULL);
     bool ok = _fle2_insert_encryptionInformation(ctx,
                                                  cmd_name,
                                                  out,
@@ -1037,12 +1028,6 @@ static bool _create_markings_cmd_bson(mongocrypt_ctx_t *ctx, bson_t *out) {
     BSON_ASSERT_PARAM(ctx);
     BSON_ASSERT_PARAM(out);
 
-    if (context_uses_fle2(ctx)) {
-        // Defer to FLE2 to generate the markings command
-        return _fle2_mongo_op_markings(ctx, out);
-    }
-
-    // For FLE1:
     // Get the original command document
     bson_t bson_view = BSON_INITIALIZER;
     if (!_mongocrypt_buffer_to_bson(&ectx->original_cmd, &bson_view)) {
@@ -1057,6 +1042,12 @@ static bool _create_markings_cmd_bson(mongocrypt_ctx_t *ctx, bson_t *out) {
     bson_init(out);
     bson_copy_to_excluding_noinit(&bson_view, out, "$db", NULL);
 
+    if (context_uses_fle2(ctx)) {
+        // Defer to FLE2 to generate the markings command
+        return _fle2_mongo_op_markings(ctx, out);
+    }
+
+    // For FLE1:
     if (ectx->more_target_colls.len > 0) {
         mongocrypt_status_t *status = ctx->status;
 
