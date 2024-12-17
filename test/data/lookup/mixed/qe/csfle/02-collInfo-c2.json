@@ -17,12 +17,12 @@
         "validator": {
             "$jsonSchema": {
                 "properties": {
-                    "e1": {
+                    "e2": {
                         "encrypt": {
                             "keyId": [
                                 {
                                     "$binary": {
-                                        "base64": "YWFhYWFhYWFhYWFhYWFhYQ==",
+                                        "base64": "uJ2Njy8YQDuYKbzu2vEKQg==",
                                         "subType": "04"
                                     }
                                 }
