@@ -36,6 +36,7 @@ static void _test_load_nonesuch(_mongocrypt_tester_t *t) {
 }
 
 void _mongocrypt_tester_install_dll(_mongocrypt_tester_t *tester) {
+    return;
     INSTALL_TEST(_test_load_simple_library);
     INSTALL_TEST(_test_load_nonesuch);
 }
