@@ -6374,26 +6374,9 @@ static void _test_lookup(_mongocrypt_tester_t *tester) {
             ASSERT_OK(mongocrypt_ctx_mongo_op(ctx, got), ctx);
             ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
             mongocrypt_binary_destroy(got);
-            mongocrypt_binary_t *to_feed = TF("03-reply-from-mongocryptd.json");
-            ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, to_feed), ctx);
-            ASSERT_OK(mongocrypt_ctx_mongo_done(ctx), ctx);
         }
 
-        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_KEYS);
-        {
-            mongocrypt_binary_t *to_feed = TF("04-key-doc.json");
-            ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, to_feed), ctx);
-            ASSERT_OK(mongocrypt_ctx_mongo_done(ctx), ctx);
-        }
-
-        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_READY);
-        {
-            mongocrypt_binary_t *expect = TF("04-cmd-to-mongod.jsonc");
-            mongocrypt_binary_t *got = mongocrypt_binary_new();
-            ASSERT_OK(mongocrypt_ctx_finalize(ctx, got), ctx);
-            ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
-            mongocrypt_binary_destroy(got);
-        }
+        // mongocryptd is expected to error.
 
         mongocrypt_ctx_destroy(ctx);
         mongocrypt_destroy(crypt);
