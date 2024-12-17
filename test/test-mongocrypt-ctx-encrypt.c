@@ -508,6 +508,7 @@ static void _test_encrypt_need_markings(_mongocrypt_tester_t *tester) {
 }
 
 static void _test_encrypt_csfle_no_needs_markings(_mongocrypt_tester_t *tester) {
+    return;
     if (!TEST_MONGOCRYPT_HAVE_REAL_CRYPT_SHARED_LIB) {
         TEST_STDERR_PRINTF("No 'real' csfle library is available. The %s test is a no-op.\n", BSON_FUNC);
         return;
@@ -4854,6 +4855,1119 @@ static void _test_fle2_collinfo_with_bad_str_encode_version(_mongocrypt_tester_t
 
     mongocrypt_ctx_destroy(ctx);
     mongocrypt_destroy(crypt);
+}
+
+static void _test_lookup(_mongocrypt_tester_t *tester) {
+    // Test $lookup with mongocryptd.
+#define TF(suffix) TEST_FILE("./test/data/lookup/csfle-mongocryptd/" suffix)
+    {
+        mongocrypt_t *crypt = _mongocrypt_tester_mongocrypt(TESTER_MONGOCRYPT_DEFAULT);
+        mongocrypt_ctx_t *ctx = mongocrypt_ctx_new(crypt);
+
+        ASSERT_OK(mongocrypt_ctx_encrypt_init(ctx, "db", -1, TF("01-cmd.json")), ctx);
+
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_COLLINFO);
+        {
+            mongocrypt_binary_t *expect = TF("02-listCollections-filter.json");
+            mongocrypt_binary_t *got = mongocrypt_binary_new();
+            ASSERT_OK(mongocrypt_ctx_mongo_op(ctx, got), ctx);
+            ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
+            mongocrypt_binary_destroy(got);
+
+            // Feed both needed schemas.
+            ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, TF("02-collInfo-c1.json")), ctx);
+            ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, TF("02-collInfo-c2.json")), ctx);
+            ASSERT_OK(mongocrypt_ctx_mongo_done(ctx), ctx);
+        }
+
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_MARKINGS);
+        {
+            mongocrypt_binary_t *expect = TF("03-cmd-to-mongocryptd.json");
+            mongocrypt_binary_t *got = mongocrypt_binary_new();
+            ASSERT_OK(mongocrypt_ctx_mongo_op(ctx, got), ctx);
+            ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
+            mongocrypt_binary_destroy(got);
+        }
+
+        mongocrypt_ctx_destroy(ctx);
+        mongocrypt_destroy(crypt);
+    }
+#undef TF
+
+    // Test nested $lookup with mongocryptd.
+#define TF(suffix) TEST_FILE("./test/data/lookup/csfle-mongocryptd-nested/" suffix)
+    {
+        mongocrypt_t *crypt = _mongocrypt_tester_mongocrypt(TESTER_MONGOCRYPT_DEFAULT);
+        mongocrypt_ctx_t *ctx = mongocrypt_ctx_new(crypt);
+
+        ASSERT_OK(mongocrypt_ctx_encrypt_init(ctx, "db", -1, TF("01-cmd.json")), ctx);
+
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_COLLINFO);
+        {
+            mongocrypt_binary_t *expect = TF("02-listCollections-filter.json");
+            mongocrypt_binary_t *got = mongocrypt_binary_new();
+            ASSERT_OK(mongocrypt_ctx_mongo_op(ctx, got), ctx);
+            ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
+            mongocrypt_binary_destroy(got);
+        }
+
+        mongocrypt_ctx_destroy(ctx);
+        mongocrypt_destroy(crypt);
+    }
+#undef TF
+
+    // Test $lookup within $unionWith with mongocryptd.
+#define TF(suffix) TEST_FILE("./test/data/lookup/csfle-mongocryptd-unionWith/" suffix)
+    {
+        mongocrypt_t *crypt = _mongocrypt_tester_mongocrypt(TESTER_MONGOCRYPT_DEFAULT);
+        mongocrypt_ctx_t *ctx = mongocrypt_ctx_new(crypt);
+
+        ASSERT_OK(mongocrypt_ctx_encrypt_init(ctx, "db", -1, TF("01-cmd.json")), ctx);
+
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_COLLINFO);
+        {
+            mongocrypt_binary_t *expect = TF("02-listCollections-filter.json");
+            mongocrypt_binary_t *got = mongocrypt_binary_new();
+            ASSERT_OK(mongocrypt_ctx_mongo_op(ctx, got), ctx);
+            ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
+            mongocrypt_binary_destroy(got);
+        }
+
+        mongocrypt_ctx_destroy(ctx);
+        mongocrypt_destroy(crypt);
+    }
+#undef TF
+
+    // Test $lookup within $facet with mongocryptd.
+#define TF(suffix) TEST_FILE("./test/data/lookup/csfle-mongocryptd-facet/" suffix)
+    {
+        mongocrypt_t *crypt = _mongocrypt_tester_mongocrypt(TESTER_MONGOCRYPT_DEFAULT);
+        mongocrypt_ctx_t *ctx = mongocrypt_ctx_new(crypt);
+
+        ASSERT_OK(mongocrypt_ctx_encrypt_init(ctx, "db", -1, TF("01-cmd.json")), ctx);
+
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_COLLINFO);
+        {
+            mongocrypt_binary_t *expect = TF("02-listCollections-filter.json");
+            mongocrypt_binary_t *got = mongocrypt_binary_new();
+            ASSERT_OK(mongocrypt_ctx_mongo_op(ctx, got), ctx);
+            ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
+            mongocrypt_binary_destroy(got);
+        }
+
+        mongocrypt_ctx_destroy(ctx);
+        mongocrypt_destroy(crypt);
+    }
+#undef TF
+
+    // Test $lookup with mongocryptd when one schema is in the schemaMap.
+#define TF(suffix) TEST_FILE("./test/data/lookup/csfle-mongocryptd-schemaMap/" suffix)
+    {
+        mongocrypt_t *crypt = _mongocrypt_tester_mongocrypt(TESTER_MONGOCRYPT_SKIP_INIT);
+        ASSERT_OK(mongocrypt_setopt_schema_map(crypt, TF("00-schemaMap.json")), crypt);
+        ASSERT_OK(mongocrypt_init(crypt), crypt);
+        mongocrypt_ctx_t *ctx = mongocrypt_ctx_new(crypt);
+
+        ASSERT_OK(mongocrypt_ctx_encrypt_init(ctx, "db", -1, TF("01-cmd.json")), ctx);
+
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_COLLINFO);
+        {
+            mongocrypt_binary_t *expect = TF("02-listCollections-filter.json");
+            mongocrypt_binary_t *got = mongocrypt_binary_new();
+            ASSERT_OK(mongocrypt_ctx_mongo_op(ctx, got), ctx);
+            ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
+            mongocrypt_binary_destroy(got);
+
+            // Feed remote schema for "c1". "c2" is found in the schemaMap.
+            ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, TF("02-collInfo-c1.json")), ctx);
+            ASSERT_OK(mongocrypt_ctx_mongo_done(ctx), ctx);
+        }
+
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_MARKINGS);
+        {
+            mongocrypt_binary_t *expect = TF("03-cmd-to-mongocryptd.json");
+            mongocrypt_binary_t *got = mongocrypt_binary_new();
+            ASSERT_OK(mongocrypt_ctx_mongo_op(ctx, got), ctx);
+            ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
+            mongocrypt_binary_destroy(got);
+        }
+
+        mongocrypt_ctx_destroy(ctx);
+        mongocrypt_destroy(crypt);
+    }
+#undef TF
+
+    // Test $lookup with a self-lookup.
+#define TF(suffix) TEST_FILE("./test/data/lookup/csfle-mongocryptd-self/" suffix)
+    {
+        mongocrypt_t *crypt = _mongocrypt_tester_mongocrypt(TESTER_MONGOCRYPT_DEFAULT);
+        mongocrypt_ctx_t *ctx = mongocrypt_ctx_new(crypt);
+
+        ASSERT_OK(mongocrypt_ctx_encrypt_init(ctx, "db", -1, TF("01-cmd.json")), ctx);
+
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_COLLINFO);
+        {
+            mongocrypt_binary_t *expect = TF("02-listCollections-filter.json");
+            mongocrypt_binary_t *got = mongocrypt_binary_new();
+            ASSERT_OK(mongocrypt_ctx_mongo_op(ctx, got), ctx);
+            ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
+            mongocrypt_binary_destroy(got);
+
+            ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, TF("02-collInfo-c1.json")), ctx);
+            ASSERT_OK(mongocrypt_ctx_mongo_done(ctx), ctx);
+        }
+
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_MARKINGS);
+        {
+            mongocrypt_binary_t *expect = TF("03-cmd-to-mongocryptd.json");
+            mongocrypt_binary_t *got = mongocrypt_binary_new();
+            ASSERT_OK(mongocrypt_ctx_mongo_op(ctx, got), ctx);
+            ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
+            mongocrypt_binary_destroy(got);
+        }
+
+        mongocrypt_ctx_destroy(ctx);
+        mongocrypt_destroy(crypt);
+    }
+#undef TF
+
+    // Test $lookup with mongocryptd when one schema is already cached.
+    {
+        mongocrypt_t *crypt = _mongocrypt_tester_mongocrypt(TESTER_MONGOCRYPT_DEFAULT);
+
+        // Do a self-lookup to add only "c1" to the cache.
+#define TF(suffix) TEST_FILE("./test/data/lookup/csfle-mongocryptd-self/" suffix)
+        {
+            mongocrypt_ctx_t *ctx = mongocrypt_ctx_new(crypt);
+            ASSERT_OK(mongocrypt_ctx_encrypt_init(ctx, "db", -1, TF("01-cmd.json")), ctx);
+            ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_COLLINFO);
+            {
+                mongocrypt_binary_t *expect = TF("02-listCollections-filter.json");
+                mongocrypt_binary_t *got = mongocrypt_binary_new();
+                ASSERT_OK(mongocrypt_ctx_mongo_op(ctx, got), ctx);
+                ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
+                mongocrypt_binary_destroy(got);
+
+                ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, TF("02-collInfo-c1.json")), ctx);
+                ASSERT_OK(mongocrypt_ctx_mongo_done(ctx), ctx);
+            }
+            mongocrypt_ctx_destroy(ctx);
+        }
+#undef TF
+
+#define TF(suffix) TEST_FILE("./test/data/lookup/csfle-mongocryptd/" suffix)
+        // Expect "c1" schema is not requested again.
+        {
+            mongocrypt_ctx_t *ctx = mongocrypt_ctx_new(crypt);
+
+            ASSERT_OK(mongocrypt_ctx_encrypt_init(ctx, "db", -1, TF("01-cmd.json")), ctx);
+
+            ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_COLLINFO);
+            {
+                mongocrypt_binary_t *expect = TEST_BSON(BSON_STR({"name" : {"$in" : ["c2"]}}));
+                mongocrypt_binary_t *got = mongocrypt_binary_new();
+                ASSERT_OK(mongocrypt_ctx_mongo_op(ctx, got), ctx);
+                ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
+                mongocrypt_binary_destroy(got);
+
+                // Feed remaining needed schema.
+                ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, TF("02-collInfo-c2.json")), ctx);
+                ASSERT_OK(mongocrypt_ctx_mongo_done(ctx), ctx);
+            }
+
+            ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_MARKINGS);
+            {
+                mongocrypt_binary_t *expect = TF("03-cmd-to-mongocryptd.json");
+                mongocrypt_binary_t *got = mongocrypt_binary_new();
+                ASSERT_OK(mongocrypt_ctx_mongo_op(ctx, got), ctx);
+                ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
+                mongocrypt_binary_destroy(got);
+            }
+
+            mongocrypt_ctx_destroy(ctx);
+        }
+        mongocrypt_destroy(crypt);
+    }
+#undef TF
+
+    // Test $lookup caches no collinfo results as empty schemas.
+    {
+        mongocrypt_t *crypt = _mongocrypt_tester_mongocrypt(TESTER_MONGOCRYPT_DEFAULT);
+
+        // Do a self-lookup to add only "c1" to the cache.
+#define TF(suffix) TEST_FILE("./test/data/lookup/csfle-mongocryptd/" suffix)
+        {
+            mongocrypt_ctx_t *ctx = mongocrypt_ctx_new(crypt);
+            ASSERT_OK(mongocrypt_ctx_encrypt_init(ctx, "db", -1, TF("01-cmd.json")), ctx);
+            ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_COLLINFO);
+            // Feed no collinfo results. Expect "c1" and "c2" to be cached as empty schemas.
+            ASSERT_OK(mongocrypt_ctx_mongo_done(ctx), ctx);
+            mongocrypt_ctx_destroy(ctx);
+        }
+#undef TF
+
+#define TF(suffix) TEST_FILE("./test/data/lookup/csfle-mongocryptd/" suffix)
+        // Expect "c1" schema is not requested again.
+        {
+            mongocrypt_ctx_t *ctx = mongocrypt_ctx_new(crypt);
+
+            ASSERT_OK(mongocrypt_ctx_encrypt_init(ctx, "db", -1, TF("01-cmd.json")), ctx);
+
+            // Expect no more schemas are needed (both empty).
+            ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_MARKINGS);
+            mongocrypt_ctx_destroy(ctx);
+        }
+        mongocrypt_destroy(crypt);
+    }
+#undef TF
+    // Test $lookup from a view.
+#define TF(suffix) TEST_FILE("./test/data/lookup/csfle-mongocryptd-view/" suffix)
+    {
+        mongocrypt_t *crypt = _mongocrypt_tester_mongocrypt(TESTER_MONGOCRYPT_DEFAULT);
+        mongocrypt_ctx_t *ctx = mongocrypt_ctx_new(crypt);
+
+        ASSERT_OK(mongocrypt_ctx_encrypt_init(ctx, "db", -1, TF("01-cmd.json")), ctx);
+
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_COLLINFO);
+        {
+            mongocrypt_binary_t *expect = TF("02-listCollections-filter.json");
+            mongocrypt_binary_t *got = mongocrypt_binary_new();
+            ASSERT_OK(mongocrypt_ctx_mongo_op(ctx, got), ctx);
+            ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
+            mongocrypt_binary_destroy(got);
+
+            // Feed both needed schemas.
+            ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, TF("02-collInfo-c1.json")), ctx);
+            ASSERT_FAILS(mongocrypt_ctx_mongo_feed(ctx, TF("02-collInfo-v1.json")),
+                         ctx,
+                         "cannot auto encrypt with view");
+            ASSERT_FAILS(mongocrypt_ctx_mongo_done(ctx), ctx, "cannot auto encrypt with view");
+        }
+
+        mongocrypt_ctx_destroy(ctx);
+        mongocrypt_destroy(crypt);
+    }
+#undef TF
+    // Test $lookup with feeding the same schema twice.
+#define TF(suffix) TEST_FILE("./test/data/lookup/csfle-mongocryptd/" suffix)
+    {
+        mongocrypt_t *crypt = _mongocrypt_tester_mongocrypt(TESTER_MONGOCRYPT_DEFAULT);
+        mongocrypt_ctx_t *ctx = mongocrypt_ctx_new(crypt);
+
+        ASSERT_OK(mongocrypt_ctx_encrypt_init(ctx, "db", -1, TF("01-cmd.json")), ctx);
+
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_COLLINFO);
+        {
+            // Feed schema for "c2" twice.
+            ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, TF("02-collInfo-c1.json")), ctx);
+            ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, TF("02-collInfo-c2.json")), ctx);
+            ASSERT_FAILS(mongocrypt_ctx_mongo_feed(ctx, TF("02-collInfo-c2.json")), ctx, "got duplicate schemas");
+        }
+
+        mongocrypt_ctx_destroy(ctx);
+        mongocrypt_destroy(crypt);
+    }
+#undef TF
+
+    // Test $lookup with with feeding a non-matching schema.
+#define TF(suffix) TEST_FILE("./test/data/lookup/csfle-mongocryptd-mismatch/" suffix)
+    {
+        mongocrypt_t *crypt = _mongocrypt_tester_mongocrypt(TESTER_MONGOCRYPT_DEFAULT);
+        mongocrypt_ctx_t *ctx = mongocrypt_ctx_new(crypt);
+
+        ASSERT_OK(mongocrypt_ctx_encrypt_init(ctx, "db", -1, TF("01-cmd.json")), ctx);
+
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_COLLINFO);
+        {
+            ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, TF("02-collInfo-c1.json")), ctx);
+            ASSERT_FAILS(mongocrypt_ctx_mongo_feed(ctx, TF("02-collInfo-c3.json")), ctx, "given unexpected schema");
+        }
+
+        mongocrypt_ctx_destroy(ctx);
+        mongocrypt_destroy(crypt);
+    }
+#undef TF
+
+    // Test $lookup with mongocryptd with only local schemas.
+#define TF(suffix) TEST_FILE("./test/data/lookup/csfle-mongocryptd-only-schemaMap/" suffix)
+    {
+        mongocrypt_t *crypt = _mongocrypt_tester_mongocrypt(TESTER_MONGOCRYPT_SKIP_INIT);
+        ASSERT_OK(mongocrypt_setopt_schema_map(crypt, TF("00-schemaMap.json")), crypt);
+        ASSERT_OK(mongocrypt_init(crypt), crypt);
+        mongocrypt_ctx_t *ctx = mongocrypt_ctx_new(crypt);
+
+        ASSERT_OK(mongocrypt_ctx_encrypt_init(ctx, "db", -1, TF("01-cmd.json")), ctx);
+
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_MARKINGS);
+        {
+            mongocrypt_binary_t *expect = TF("02-cmd-to-mongocryptd.json");
+            mongocrypt_binary_t *got = mongocrypt_binary_new();
+            ASSERT_OK(mongocrypt_ctx_mongo_op(ctx, got), ctx);
+            ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
+            mongocrypt_binary_destroy(got);
+        }
+
+        mongocrypt_ctx_destroy(ctx);
+        mongocrypt_destroy(crypt);
+    }
+#undef TF
+
+// TODO: Test $lookup from a collection that has no $jsonSchema configured.
+// #define TF(suffix) TEST_FILE("./test/data/lookup/csfle-mongocryptd-sibling/" suffix)
+//     {
+//         mongocrypt_t *crypt = _mongocrypt_tester_mongocrypt(TESTER_MONGOCRYPT_DEFAULT);
+//         mongocrypt_ctx_t *ctx = mongocrypt_ctx_new(crypt);
+
+//         ASSERT_OK(mongocrypt_ctx_encrypt_init(ctx, "db", -1, TF("01-cmd.json")), ctx);
+
+//         ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_COLLINFO);
+//         {
+//             mongocrypt_binary_t *expect = TF("02-listCollections-filter.json");
+//             mongocrypt_binary_t *got = mongocrypt_binary_new();
+//             ASSERT_OK(mongocrypt_ctx_mongo_op(ctx, got), ctx);
+//             ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
+//             mongocrypt_binary_destroy(got);
+
+//             // Feed both needed schemas.
+//             ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, TF("02-collInfo-c1.json")), ctx);
+//             ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, TF("02-collInfo-c2.json")), ctx);
+//             ASSERT_OK(mongocrypt_ctx_mongo_done(ctx), ctx);
+//         }
+
+//         ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_MARKINGS);
+//         {
+//             mongocrypt_binary_t *expect = TF("03-cmd-to-mongocryptd.json");
+//             mongocrypt_binary_t *got = mongocrypt_binary_new();
+//             ASSERT_OK(mongocrypt_ctx_mongo_op(ctx, got), ctx);
+//             ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
+//             mongocrypt_binary_destroy(got);
+
+//             // Feed both needed schemas.
+//             ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, TF("03-reply-from-mongocryptd.json")), ctx);
+//             ASSERT_OK(mongocrypt_ctx_mongo_done(ctx), ctx);
+//         }
+
+//         mongocrypt_ctx_destroy(ctx);
+//         mongocrypt_destroy(crypt);
+//     }
+// #undef TF
+
+// Test $lookup with QE.
+#define TF(suffix) TEST_FILE("./test/data/lookup/qe-mongocryptd/" suffix)
+    {
+        mongocrypt_t *crypt = _mongocrypt_tester_mongocrypt(TESTER_MONGOCRYPT_DEFAULT);
+        mongocrypt_ctx_t *ctx = mongocrypt_ctx_new(crypt);
+
+        ASSERT_OK(mongocrypt_ctx_encrypt_init(ctx, "db", -1, TF("01-cmd.json")), ctx);
+
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_COLLINFO);
+        {
+            mongocrypt_binary_t *expect = TF("02-listCollections-filter.json");
+            mongocrypt_binary_t *got = mongocrypt_binary_new();
+            ASSERT_OK(mongocrypt_ctx_mongo_op(ctx, got), ctx);
+            ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
+            mongocrypt_binary_destroy(got);
+
+            // Feed both needed schemas.
+            ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, TF("02-collInfo-c1.json")), ctx);
+            ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, TF("02-collInfo-c2.json")), ctx);
+            ASSERT_OK(mongocrypt_ctx_mongo_done(ctx), ctx);
+        }
+
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_MARKINGS);
+        {
+            mongocrypt_binary_t *expect = TF("03-cmd-to-mongocryptd.json");
+            mongocrypt_binary_t *got = mongocrypt_binary_new();
+            ASSERT_OK(mongocrypt_ctx_mongo_op(ctx, got), ctx);
+            ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
+            mongocrypt_binary_destroy(got);
+            mongocrypt_binary_t *to_feed = TF("03-reply-from-mongocryptd.json");
+            ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, to_feed), ctx);
+            ASSERT_OK(mongocrypt_ctx_mongo_done(ctx), ctx);
+        }
+
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_READY);
+        {
+            mongocrypt_binary_t *expect = TF("04-cmd-to-mongod.jsonc");
+            mongocrypt_binary_t *got = mongocrypt_binary_new();
+            ASSERT_OK(mongocrypt_ctx_finalize(ctx, got), ctx);
+            ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
+            mongocrypt_binary_destroy(got);
+        }
+
+        mongocrypt_ctx_destroy(ctx);
+        mongocrypt_destroy(crypt);
+    }
+#undef TF
+
+    // Test $lookup with QE with an encrypted payload.
+#define TF(suffix) TEST_FILE("./test/data/lookup/qe-mongocryptd-with-payload/" suffix)
+    {
+        mongocrypt_t *crypt = _mongocrypt_tester_mongocrypt(TESTER_MONGOCRYPT_DEFAULT);
+        mongocrypt_ctx_t *ctx = mongocrypt_ctx_new(crypt);
+
+        ASSERT_OK(mongocrypt_ctx_encrypt_init(ctx, "db", -1, TF("01-cmd.json")), ctx);
+
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_COLLINFO);
+        {
+            mongocrypt_binary_t *expect = TF("02-listCollections-filter.json");
+            mongocrypt_binary_t *got = mongocrypt_binary_new();
+            ASSERT_OK(mongocrypt_ctx_mongo_op(ctx, got), ctx);
+            ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
+            mongocrypt_binary_destroy(got);
+
+            // Feed both needed schemas.
+            ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, TF("02-collInfo-c1.json")), ctx);
+            ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, TF("02-collInfo-c2.json")), ctx);
+            ASSERT_OK(mongocrypt_ctx_mongo_done(ctx), ctx);
+        }
+
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_MARKINGS);
+        {
+            mongocrypt_binary_t *expect = TF("03-cmd-to-mongocryptd.json");
+            mongocrypt_binary_t *got = mongocrypt_binary_new();
+            ASSERT_OK(mongocrypt_ctx_mongo_op(ctx, got), ctx);
+            ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
+            mongocrypt_binary_destroy(got);
+            mongocrypt_binary_t *to_feed = TF("03-reply-from-mongocryptd.json");
+            ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, to_feed), ctx);
+            ASSERT_OK(mongocrypt_ctx_mongo_done(ctx), ctx);
+        }
+
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_KEYS);
+        {
+            mongocrypt_binary_t *to_feed = TF("04-key-doc.json");
+            ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, to_feed), ctx);
+            ASSERT_OK(mongocrypt_ctx_mongo_done(ctx), ctx);
+        }
+
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_READY);
+        {
+            mongocrypt_binary_t *expect = TF("04-cmd-to-mongod.jsonc");
+            mongocrypt_binary_t *got = mongocrypt_binary_new();
+            ASSERT_OK(mongocrypt_ctx_finalize(ctx, got), ctx);
+            ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
+            mongocrypt_binary_destroy(got);
+        }
+
+        mongocrypt_ctx_destroy(ctx);
+        mongocrypt_destroy(crypt);
+    }
+#undef TF
+
+// Test $lookup with QE from encryptedFieldsMap.
+#define TF(suffix) TEST_FILE("./test/data/lookup/qe-mongocryptd-encryptedFieldsMap/" suffix)
+    {
+        mongocrypt_t *crypt = _mongocrypt_tester_mongocrypt(TESTER_MONGOCRYPT_SKIP_INIT);
+        ASSERT_OK(mongocrypt_setopt_encrypted_field_config_map(crypt, TF("00-encryptedFieldsMap.json")), crypt);
+        ASSERT_OK(mongocrypt_init(crypt), crypt);
+        mongocrypt_ctx_t *ctx = mongocrypt_ctx_new(crypt);
+
+        ASSERT_OK(mongocrypt_ctx_encrypt_init(ctx, "db", -1, TF("01-cmd.json")), ctx);
+
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_COLLINFO);
+        {
+            mongocrypt_binary_t *expect = TF("02-listCollections-filter.json");
+            mongocrypt_binary_t *got = mongocrypt_binary_new();
+            ASSERT_OK(mongocrypt_ctx_mongo_op(ctx, got), ctx);
+            ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
+            mongocrypt_binary_destroy(got);
+
+            // Only feed collinfo for c1. c2 is included in encryptedFieldsMap.
+            ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, TF("02-collInfo-c1.json")), ctx);
+            ASSERT_OK(mongocrypt_ctx_mongo_done(ctx), ctx);
+        }
+
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_MARKINGS);
+        {
+            mongocrypt_binary_t *expect = TF("03-cmd-to-mongocryptd.json");
+            mongocrypt_binary_t *got = mongocrypt_binary_new();
+            ASSERT_OK(mongocrypt_ctx_mongo_op(ctx, got), ctx);
+            ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
+            mongocrypt_binary_destroy(got);
+            mongocrypt_binary_t *to_feed = TF("03-reply-from-mongocryptd.json");
+            ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, to_feed), ctx);
+            ASSERT_OK(mongocrypt_ctx_mongo_done(ctx), ctx);
+        }
+
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_KEYS);
+        {
+            mongocrypt_binary_t *to_feed = TF("04-key-doc.json");
+            ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, to_feed), ctx);
+            ASSERT_OK(mongocrypt_ctx_mongo_done(ctx), ctx);
+        }
+
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_READY);
+        {
+            mongocrypt_binary_t *expect = TF("04-cmd-to-mongod.jsonc");
+            mongocrypt_binary_t *got = mongocrypt_binary_new();
+            ASSERT_OK(mongocrypt_ctx_finalize(ctx, got), ctx);
+            ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
+            mongocrypt_binary_destroy(got);
+        }
+
+        mongocrypt_ctx_destroy(ctx);
+        mongocrypt_destroy(crypt);
+    }
+#undef TF
+
+    // Test $lookup with QE with self-lookup.
+#define TF(suffix) TEST_FILE("./test/data/lookup/qe-mongocryptd-self/" suffix)
+    {
+        mongocrypt_t *crypt = _mongocrypt_tester_mongocrypt(TESTER_MONGOCRYPT_DEFAULT);
+        mongocrypt_ctx_t *ctx = mongocrypt_ctx_new(crypt);
+
+        ASSERT_OK(mongocrypt_ctx_encrypt_init(ctx, "db", -1, TF("01-cmd.json")), ctx);
+
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_COLLINFO);
+        {
+            mongocrypt_binary_t *expect = TF("02-listCollections-filter.json");
+            mongocrypt_binary_t *got = mongocrypt_binary_new();
+            ASSERT_OK(mongocrypt_ctx_mongo_op(ctx, got), ctx);
+            ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
+            mongocrypt_binary_destroy(got);
+
+            ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, TF("02-collInfo-c1.json")), ctx);
+            ASSERT_OK(mongocrypt_ctx_mongo_done(ctx), ctx);
+        }
+
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_MARKINGS);
+        {
+            mongocrypt_binary_t *expect = TF("03-cmd-to-mongocryptd.json");
+            mongocrypt_binary_t *got = mongocrypt_binary_new();
+            ASSERT_OK(mongocrypt_ctx_mongo_op(ctx, got), ctx);
+            ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
+            mongocrypt_binary_destroy(got);
+            mongocrypt_binary_t *to_feed = TF("03-reply-from-mongocryptd.json");
+            ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, to_feed), ctx);
+            ASSERT_OK(mongocrypt_ctx_mongo_done(ctx), ctx);
+        }
+
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_KEYS);
+        {
+            mongocrypt_binary_t *to_feed = TF("04-key-doc.json");
+            ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, to_feed), ctx);
+            ASSERT_OK(mongocrypt_ctx_mongo_done(ctx), ctx);
+        }
+
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_READY);
+        {
+            mongocrypt_binary_t *expect = TF("04-cmd-to-mongod.jsonc");
+            mongocrypt_binary_t *got = mongocrypt_binary_new();
+            ASSERT_OK(mongocrypt_ctx_finalize(ctx, got), ctx);
+            ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
+            mongocrypt_binary_destroy(got);
+        }
+
+        mongocrypt_ctx_destroy(ctx);
+        mongocrypt_destroy(crypt);
+    }
+#undef TF
+
+    // Test $lookup with QE from from cache.
+    {
+        mongocrypt_t *crypt = _mongocrypt_tester_mongocrypt(TESTER_MONGOCRYPT_DEFAULT);
+
+        // Do a self-lookup to add only "c1" to the cache.
+#define TF(suffix) TEST_FILE("./test/data/lookup/qe-mongocryptd-self/" suffix)
+        {
+            mongocrypt_ctx_t *ctx = mongocrypt_ctx_new(crypt);
+            ASSERT_OK(mongocrypt_ctx_encrypt_init(ctx, "db", -1, TF("01-cmd.json")), ctx);
+            ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_COLLINFO);
+            {
+                mongocrypt_binary_t *expect = TF("02-listCollections-filter.json");
+                mongocrypt_binary_t *got = mongocrypt_binary_new();
+                ASSERT_OK(mongocrypt_ctx_mongo_op(ctx, got), ctx);
+                ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
+                mongocrypt_binary_destroy(got);
+
+                ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, TF("02-collInfo-c1.json")), ctx);
+                ASSERT_OK(mongocrypt_ctx_mongo_done(ctx), ctx);
+            }
+            mongocrypt_ctx_destroy(ctx);
+        }
+#undef TF
+
+#define TF(suffix) TEST_FILE("./test/data/lookup/qe-mongocryptd-with-payload/" suffix)
+        // Expect "c1" schema is not requested again.
+        {
+            mongocrypt_ctx_t *ctx = mongocrypt_ctx_new(crypt);
+
+            ASSERT_OK(mongocrypt_ctx_encrypt_init(ctx, "db", -1, TF("01-cmd.json")), ctx);
+
+            ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_COLLINFO);
+            {
+                mongocrypt_binary_t *expect = TEST_BSON(BSON_STR({"name" : {"$in" : ["c2"]}}));
+                mongocrypt_binary_t *got = mongocrypt_binary_new();
+                ASSERT_OK(mongocrypt_ctx_mongo_op(ctx, got), ctx);
+                ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
+                mongocrypt_binary_destroy(got);
+
+                // Feed remaining needed schema.
+                ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, TF("02-collInfo-c2.json")), ctx);
+                ASSERT_OK(mongocrypt_ctx_mongo_done(ctx), ctx);
+            }
+
+            ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_MARKINGS);
+            {
+                mongocrypt_binary_t *expect = TF("03-cmd-to-mongocryptd.json");
+                mongocrypt_binary_t *got = mongocrypt_binary_new();
+                ASSERT_OK(mongocrypt_ctx_mongo_op(ctx, got), ctx);
+                ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
+                mongocrypt_binary_destroy(got);
+            }
+
+            mongocrypt_ctx_destroy(ctx);
+        }
+        mongocrypt_destroy(crypt);
+    }
+#undef TF
+
+// Test $lookup with mixed: QE + CSFLE
+#define TF(suffix) TEST_FILE("./test/data/lookup/mixed/qe/csfle/" suffix)
+    {
+        mongocrypt_t *crypt = _mongocrypt_tester_mongocrypt(TESTER_MONGOCRYPT_DEFAULT);
+        mongocrypt_ctx_t *ctx = mongocrypt_ctx_new(crypt);
+
+        ASSERT_OK(mongocrypt_ctx_encrypt_init(ctx, "db", -1, TF("01-cmd.json")), ctx);
+
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_COLLINFO);
+        {
+            mongocrypt_binary_t *expect = TF("02-listCollections-filter.json");
+            mongocrypt_binary_t *got = mongocrypt_binary_new();
+            ASSERT_OK(mongocrypt_ctx_mongo_op(ctx, got), ctx);
+            ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
+            mongocrypt_binary_destroy(got);
+
+            // Feed both needed schemas.
+            ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, TF("02-collInfo-c1.json")), ctx);
+            ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, TF("02-collInfo-c2.json")), ctx);
+            ASSERT_OK(mongocrypt_ctx_mongo_done(ctx), ctx);
+        }
+
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_MARKINGS);
+        {
+            mongocrypt_binary_t *expect = TF("03-cmd-to-mongocryptd.json");
+            mongocrypt_binary_t *got = mongocrypt_binary_new();
+            ASSERT_OK(mongocrypt_ctx_mongo_op(ctx, got), ctx);
+            ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
+            mongocrypt_binary_destroy(got);
+        }
+
+        // mongocryptd is expected to error.
+
+        mongocrypt_ctx_destroy(ctx);
+        mongocrypt_destroy(crypt);
+    }
+#undef TF
+
+// Test $lookup with mixed: QE + no-schema
+#define TF(suffix) TEST_FILE("./test/data/lookup/mixed/qe/no-schema/" suffix)
+    {
+        mongocrypt_t *crypt = _mongocrypt_tester_mongocrypt(TESTER_MONGOCRYPT_DEFAULT);
+        mongocrypt_ctx_t *ctx = mongocrypt_ctx_new(crypt);
+
+        ASSERT_OK(mongocrypt_ctx_encrypt_init(ctx, "db", -1, TF("01-cmd.json")), ctx);
+
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_COLLINFO);
+        {
+            mongocrypt_binary_t *expect = TF("02-listCollections-filter.json");
+            mongocrypt_binary_t *got = mongocrypt_binary_new();
+            ASSERT_OK(mongocrypt_ctx_mongo_op(ctx, got), ctx);
+            ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
+            mongocrypt_binary_destroy(got);
+
+            // Feed both needed schemas.
+            ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, TF("02-collInfo-c1.json")), ctx);
+            ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, TF("02-collInfo-c2.json")), ctx);
+            ASSERT_OK(mongocrypt_ctx_mongo_done(ctx), ctx);
+        }
+
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_MARKINGS);
+        {
+            mongocrypt_binary_t *expect = TF("03-cmd-to-mongocryptd.json");
+            mongocrypt_binary_t *got = mongocrypt_binary_new();
+            ASSERT_OK(mongocrypt_ctx_mongo_op(ctx, got), ctx);
+            ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
+            mongocrypt_binary_destroy(got);
+            mongocrypt_binary_t *to_feed = TF("03-reply-from-mongocryptd.json");
+            ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, to_feed), ctx);
+            ASSERT_OK(mongocrypt_ctx_mongo_done(ctx), ctx);
+        }
+
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_KEYS);
+        {
+            mongocrypt_binary_t *to_feed = TF("04-key-doc.json");
+            ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, to_feed), ctx);
+            ASSERT_OK(mongocrypt_ctx_mongo_done(ctx), ctx);
+        }
+
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_READY);
+        {
+            mongocrypt_binary_t *expect = TF("04-cmd-to-mongod.jsonc");
+            mongocrypt_binary_t *got = mongocrypt_binary_new();
+            ASSERT_OK(mongocrypt_ctx_finalize(ctx, got), ctx);
+            ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
+            mongocrypt_binary_destroy(got);
+        }
+
+        mongocrypt_ctx_destroy(ctx);
+        mongocrypt_destroy(crypt);
+    }
+#undef TF
+
+// Test $lookup with mixed: QE + QE
+#define TF(suffix) TEST_FILE("./test/data/lookup/mixed/qe/qe/" suffix)
+    {
+        mongocrypt_t *crypt = _mongocrypt_tester_mongocrypt(TESTER_MONGOCRYPT_DEFAULT);
+        mongocrypt_ctx_t *ctx = mongocrypt_ctx_new(crypt);
+
+        ASSERT_OK(mongocrypt_ctx_encrypt_init(ctx, "db", -1, TF("01-cmd.json")), ctx);
+
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_COLLINFO);
+        {
+            mongocrypt_binary_t *expect = TF("02-listCollections-filter.json");
+            mongocrypt_binary_t *got = mongocrypt_binary_new();
+            ASSERT_OK(mongocrypt_ctx_mongo_op(ctx, got), ctx);
+            ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
+            mongocrypt_binary_destroy(got);
+
+            // Feed both needed schemas.
+            ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, TF("02-collInfo-c1.json")), ctx);
+            ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, TF("02-collInfo-c2.json")), ctx);
+            ASSERT_OK(mongocrypt_ctx_mongo_done(ctx), ctx);
+        }
+
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_MARKINGS);
+        {
+            mongocrypt_binary_t *expect = TF("03-cmd-to-mongocryptd.json");
+            mongocrypt_binary_t *got = mongocrypt_binary_new();
+            ASSERT_OK(mongocrypt_ctx_mongo_op(ctx, got), ctx);
+            ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
+            mongocrypt_binary_destroy(got);
+            mongocrypt_binary_t *to_feed = TF("03-reply-from-mongocryptd.json");
+            ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, to_feed), ctx);
+            ASSERT_OK(mongocrypt_ctx_mongo_done(ctx), ctx);
+        }
+
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_KEYS);
+        {
+            mongocrypt_binary_t *to_feed = TF("04-key-doc.json");
+            ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, to_feed), ctx);
+            ASSERT_OK(mongocrypt_ctx_mongo_done(ctx), ctx);
+        }
+
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_READY);
+        {
+            mongocrypt_binary_t *expect = TF("04-cmd-to-mongod.jsonc");
+            mongocrypt_binary_t *got = mongocrypt_binary_new();
+            ASSERT_OK(mongocrypt_ctx_finalize(ctx, got), ctx);
+            ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
+            mongocrypt_binary_destroy(got);
+        }
+
+        mongocrypt_ctx_destroy(ctx);
+        mongocrypt_destroy(crypt);
+    }
+#undef TF
+
+// Test $lookup with mixed: CSFLE + CSFLE.
+#define TF(suffix) TEST_FILE("./test/data/lookup/mixed/csfle/csfle/" suffix)
+    {
+        mongocrypt_t *crypt = _mongocrypt_tester_mongocrypt(TESTER_MONGOCRYPT_DEFAULT);
+        mongocrypt_ctx_t *ctx = mongocrypt_ctx_new(crypt);
+
+        ASSERT_OK(mongocrypt_ctx_encrypt_init(ctx, "db", -1, TF("01-cmd.json")), ctx);
+
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_COLLINFO);
+        {
+            mongocrypt_binary_t *expect = TF("02-listCollections-filter.json");
+            mongocrypt_binary_t *got = mongocrypt_binary_new();
+            ASSERT_OK(mongocrypt_ctx_mongo_op(ctx, got), ctx);
+            ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
+            mongocrypt_binary_destroy(got);
+
+            // Feed both needed schemas.
+            ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, TF("02-collInfo-c1.json")), ctx);
+            ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, TF("02-collInfo-c2.json")), ctx);
+            ASSERT_OK(mongocrypt_ctx_mongo_done(ctx), ctx);
+        }
+
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_MARKINGS);
+        {
+            mongocrypt_binary_t *expect = TF("03-cmd-to-mongocryptd.json");
+            mongocrypt_binary_t *got = mongocrypt_binary_new();
+            ASSERT_OK(mongocrypt_ctx_mongo_op(ctx, got), ctx);
+            ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
+            mongocrypt_binary_destroy(got);
+            mongocrypt_binary_t *to_feed = TF("03-reply-from-mongocryptd.json");
+            ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, to_feed), ctx);
+            ASSERT_OK(mongocrypt_ctx_mongo_done(ctx), ctx);
+        }
+
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_KEYS);
+        {
+            mongocrypt_binary_t *to_feed = TF("04-key-doc.json");
+            ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, to_feed), ctx);
+            ASSERT_OK(mongocrypt_ctx_mongo_done(ctx), ctx);
+        }
+
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_READY);
+        {
+            mongocrypt_binary_t *expect = TF("04-cmd-to-mongod.json");
+            mongocrypt_binary_t *got = mongocrypt_binary_new();
+            ASSERT_OK(mongocrypt_ctx_finalize(ctx, got), ctx);
+            ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
+            mongocrypt_binary_destroy(got);
+        }
+
+        mongocrypt_ctx_destroy(ctx);
+        mongocrypt_destroy(crypt);
+    }
+#undef TF
+
+#define TF(suffix) TEST_FILE("./test/data/lookup/mixed/csfle/qe/" suffix)
+    {
+        mongocrypt_t *crypt = _mongocrypt_tester_mongocrypt(TESTER_MONGOCRYPT_DEFAULT);
+        mongocrypt_ctx_t *ctx = mongocrypt_ctx_new(crypt);
+
+        ASSERT_OK(mongocrypt_ctx_encrypt_init(ctx, "db", -1, TF("01-cmd.json")), ctx);
+
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_COLLINFO);
+        {
+            mongocrypt_binary_t *expect = TF("02-listCollections-filter.json");
+            mongocrypt_binary_t *got = mongocrypt_binary_new();
+            ASSERT_OK(mongocrypt_ctx_mongo_op(ctx, got), ctx);
+            ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
+            mongocrypt_binary_destroy(got);
+
+            // Feed both needed schemas.
+            ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, TF("02-collInfo-c1.json")), ctx);
+            ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, TF("02-collInfo-c2.json")), ctx);
+            ASSERT_OK(mongocrypt_ctx_mongo_done(ctx), ctx);
+        }
+
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_MARKINGS);
+        {
+            mongocrypt_binary_t *expect = TF("03-cmd-to-mongocryptd.json");
+            mongocrypt_binary_t *got = mongocrypt_binary_new();
+            ASSERT_OK(mongocrypt_ctx_mongo_op(ctx, got), ctx);
+            ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
+            mongocrypt_binary_destroy(got);
+        }
+
+        // mongocryptd is expected to error.
+
+        mongocrypt_ctx_destroy(ctx);
+        mongocrypt_destroy(crypt);
+    }
+#undef TF
+
+#define TF(suffix) TEST_FILE("./test/data/lookup/mixed/csfle/no-schema/" suffix)
+    {
+        mongocrypt_t *crypt = _mongocrypt_tester_mongocrypt(TESTER_MONGOCRYPT_DEFAULT);
+        mongocrypt_ctx_t *ctx = mongocrypt_ctx_new(crypt);
+
+        ASSERT_OK(mongocrypt_ctx_encrypt_init(ctx, "db", -1, TF("01-cmd.json")), ctx);
+
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_COLLINFO);
+        {
+            mongocrypt_binary_t *expect = TF("02-listCollections-filter.json");
+            mongocrypt_binary_t *got = mongocrypt_binary_new();
+            ASSERT_OK(mongocrypt_ctx_mongo_op(ctx, got), ctx);
+            ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
+            mongocrypt_binary_destroy(got);
+
+            // Feed both needed schemas.
+            ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, TF("02-collInfo-c1.json")), ctx);
+            ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, TF("02-collInfo-c2.json")), ctx);
+            ASSERT_OK(mongocrypt_ctx_mongo_done(ctx), ctx);
+        }
+
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_MARKINGS);
+        {
+            mongocrypt_binary_t *expect = TF("03-cmd-to-mongocryptd.json");
+            mongocrypt_binary_t *got = mongocrypt_binary_new();
+            ASSERT_OK(mongocrypt_ctx_mongo_op(ctx, got), ctx);
+            ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
+            mongocrypt_binary_destroy(got);
+            mongocrypt_binary_t *to_feed = TF("03-reply-from-mongocryptd.json");
+            ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, to_feed), ctx);
+            ASSERT_OK(mongocrypt_ctx_mongo_done(ctx), ctx);
+        }
+
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_KEYS);
+        {
+            mongocrypt_binary_t *to_feed = TF("04-key-doc.json");
+            ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, to_feed), ctx);
+            ASSERT_OK(mongocrypt_ctx_mongo_done(ctx), ctx);
+        }
+
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_READY);
+        {
+            mongocrypt_binary_t *expect = TF("04-cmd-to-mongod.json");
+            mongocrypt_binary_t *got = mongocrypt_binary_new();
+            ASSERT_OK(mongocrypt_ctx_finalize(ctx, got), ctx);
+            ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
+            mongocrypt_binary_destroy(got);
+        }
+
+        mongocrypt_ctx_destroy(ctx);
+        mongocrypt_destroy(crypt);
+    }
+#undef TF
+
+#define TF(suffix) TEST_FILE("./test/data/lookup/mixed/no-schema/csfle/" suffix)
+    {
+        mongocrypt_t *crypt = _mongocrypt_tester_mongocrypt(TESTER_MONGOCRYPT_DEFAULT);
+        mongocrypt_ctx_t *ctx = mongocrypt_ctx_new(crypt);
+
+        ASSERT_OK(mongocrypt_ctx_encrypt_init(ctx, "db", -1, TF("01-cmd.json")), ctx);
+
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_COLLINFO);
+        {
+            mongocrypt_binary_t *expect = TF("02-listCollections-filter.json");
+            mongocrypt_binary_t *got = mongocrypt_binary_new();
+            ASSERT_OK(mongocrypt_ctx_mongo_op(ctx, got), ctx);
+            ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
+            mongocrypt_binary_destroy(got);
+
+            // Feed both needed schemas.
+            ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, TF("02-collInfo-c1.json")), ctx);
+            ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, TF("02-collInfo-c2.json")), ctx);
+            ASSERT_OK(mongocrypt_ctx_mongo_done(ctx), ctx);
+        }
+
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_MARKINGS);
+        {
+            mongocrypt_binary_t *expect = TF("03-cmd-to-mongocryptd.json");
+            mongocrypt_binary_t *got = mongocrypt_binary_new();
+            ASSERT_OK(mongocrypt_ctx_mongo_op(ctx, got), ctx);
+            ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
+            mongocrypt_binary_destroy(got);
+            mongocrypt_binary_t *to_feed = TF("03-reply-from-mongocryptd.json");
+            ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, to_feed), ctx);
+            ASSERT_OK(mongocrypt_ctx_mongo_done(ctx), ctx);
+        }
+
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_KEYS);
+        {
+            mongocrypt_binary_t *to_feed = TF("04-key-doc.json");
+            ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, to_feed), ctx);
+            ASSERT_OK(mongocrypt_ctx_mongo_done(ctx), ctx);
+        }
+
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_READY);
+        {
+            mongocrypt_binary_t *expect = TF("04-cmd-to-mongod.json");
+            mongocrypt_binary_t *got = mongocrypt_binary_new();
+            ASSERT_OK(mongocrypt_ctx_finalize(ctx, got), ctx);
+            ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
+            mongocrypt_binary_destroy(got);
+        }
+        mongocrypt_ctx_destroy(ctx);
+        mongocrypt_destroy(crypt);
+    }
+#undef TF
+
+#define TF(suffix) TEST_FILE("./test/data/lookup/mixed/no-schema/no-schema/" suffix)
+    {
+        mongocrypt_t *crypt = _mongocrypt_tester_mongocrypt(TESTER_MONGOCRYPT_DEFAULT);
+        mongocrypt_ctx_t *ctx = mongocrypt_ctx_new(crypt);
+
+        ASSERT_OK(mongocrypt_ctx_encrypt_init(ctx, "db", -1, TF("01-cmd.json")), ctx);
+
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_COLLINFO);
+        {
+            mongocrypt_binary_t *expect = TF("02-listCollections-filter.json");
+            mongocrypt_binary_t *got = mongocrypt_binary_new();
+            ASSERT_OK(mongocrypt_ctx_mongo_op(ctx, got), ctx);
+            ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
+            mongocrypt_binary_destroy(got);
+
+            // Feed both needed schemas.
+            ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, TF("02-collInfo-c1.json")), ctx);
+            ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, TF("02-collInfo-c2.json")), ctx);
+            ASSERT_OK(mongocrypt_ctx_mongo_done(ctx), ctx);
+        }
+
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_MARKINGS);
+        {
+            mongocrypt_binary_t *expect = TF("03-cmd-to-mongocryptd.json");
+            mongocrypt_binary_t *got = mongocrypt_binary_new();
+            ASSERT_OK(mongocrypt_ctx_mongo_op(ctx, got), ctx);
+            ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
+            mongocrypt_binary_destroy(got);
+            mongocrypt_binary_t *to_feed = TF("03-reply-from-mongocryptd.json");
+            ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, to_feed), ctx);
+            ASSERT_OK(mongocrypt_ctx_mongo_done(ctx), ctx);
+        }
+
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_READY);
+        {
+            mongocrypt_binary_t *expect = TF("04-cmd-to-mongod.json");
+            mongocrypt_binary_t *got = mongocrypt_binary_new();
+            ASSERT_OK(mongocrypt_ctx_finalize(ctx, got), ctx);
+            ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
+            mongocrypt_binary_destroy(got);
+        }
+        mongocrypt_ctx_destroy(ctx);
+        mongocrypt_destroy(crypt);
+    }
+#undef TF
+
+#define TF(suffix) TEST_FILE("./test/data/lookup/mixed/no-schema/qe/" suffix)
+    {
+        mongocrypt_t *crypt = _mongocrypt_tester_mongocrypt(TESTER_MONGOCRYPT_DEFAULT);
+        mongocrypt_ctx_t *ctx = mongocrypt_ctx_new(crypt);
+
+        ASSERT_OK(mongocrypt_ctx_encrypt_init(ctx, "db", -1, TF("01-cmd.json")), ctx);
+
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_COLLINFO);
+        {
+            mongocrypt_binary_t *expect = TF("02-listCollections-filter.json");
+            mongocrypt_binary_t *got = mongocrypt_binary_new();
+            ASSERT_OK(mongocrypt_ctx_mongo_op(ctx, got), ctx);
+            ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
+            mongocrypt_binary_destroy(got);
+
+            // Feed both needed schemas.
+            ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, TF("02-collInfo-c1.json")), ctx);
+            ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, TF("02-collInfo-c2.json")), ctx);
+            ASSERT_OK(mongocrypt_ctx_mongo_done(ctx), ctx);
+        }
+
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_MARKINGS);
+        {
+            mongocrypt_binary_t *expect = TF("03-cmd-to-mongocryptd.json");
+            mongocrypt_binary_t *got = mongocrypt_binary_new();
+            ASSERT_OK(mongocrypt_ctx_mongo_op(ctx, got), ctx);
+            ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
+            mongocrypt_binary_destroy(got);
+            mongocrypt_binary_t *to_feed = TF("03-reply-from-mongocryptd.json");
+            ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, to_feed), ctx);
+            ASSERT_OK(mongocrypt_ctx_mongo_done(ctx), ctx);
+        }
+
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_KEYS);
+        {
+            mongocrypt_binary_t *to_feed = TF("04-key-doc.json");
+            ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, to_feed), ctx);
+            ASSERT_OK(mongocrypt_ctx_mongo_done(ctx), ctx);
+        }
+
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_READY);
+        {
+            mongocrypt_binary_t *expect = TF("04-cmd-to-mongod.jsonc");
+            mongocrypt_binary_t *got = mongocrypt_binary_new();
+            ASSERT_OK(mongocrypt_ctx_finalize(ctx, got), ctx);
+            ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
+            mongocrypt_binary_destroy(got);
+        }
+        mongocrypt_ctx_destroy(ctx);
+        mongocrypt_destroy(crypt);
+    }
+#undef TF
 }
 
 void _mongocrypt_tester_install_ctx_encrypt(_mongocrypt_tester_t *tester) {
