@@ -282,8 +282,8 @@ static bool _fle2_insert_encryptionInformation(const mongocrypt_ctx_t *ctx,
                 goto fail;
             }
             if (bson_has_field(cmd, "nsInfo.1")) {
-                CLIENT_ERR(
-                    "expected one namespace in `bulkWrite`, but found more than one. Only one namespace is supported.");
+                CLIENT_ERR("expected one namespace in `bulkWrite`, but found more than one. Only one namespace is "
+                           "supported.");
                 goto fail;
             }
             if (!mc_iter_document_as_bson(&nsInfo_iter, &nsInfo, status)) {
@@ -635,11 +635,11 @@ static bool _set_schema_from_collinfo(mongocrypt_ctx_t *ctx, const char *ns, bso
         }
     } else if (0 == strcmp(ectx->cmd_name, "bulkWrite")) {
         ectx->used_empty_encryptedFields = true;
-        // `bulkWrite` is a special case. Sending `bulkWrite` with `jsonSchema` to query analysis results in an error:
-        // `The bulkWrite command only supports Queryable Encryption`
+        // `bulkWrite` is a special case. Sending `bulkWrite` with `jsonSchema` to query analysis results in an
+        // error: `The bulkWrite command only supports Queryable Encryption`
         //
-        // Add an empty encryptedFields (rather than an empty JSON schema) to ensure `bulkWrite` can be sent to query
-        // analysis.
+        // Add an empty encryptedFields (rather than an empty JSON schema) to ensure `bulkWrite` can be sent to
+        // query analysis.
         bson_t empty_encryptedFields = BSON_INITIALIZER;
         {
             char *escCollection = bson_strdup_printf("enxcol_.%s.esc", ectx->target_coll);
@@ -770,7 +770,7 @@ static bool context_uses_fle2(mongocrypt_ctx_t *ctx) {
 
     BSON_ASSERT_PARAM(ctx);
 
-    return !_mongocrypt_buffer_empty(&ectx->encrypted_field_config);
+    return !_mongocrypt_buffer_empty(&ectx->encrypted_field_config); // TODO: return true if ANY have EFC?
 }
 
 /* _fle2_collect_keys_for_deleteTokens requests keys required to produce
@@ -900,7 +900,8 @@ static bool _mongo_done_collinfo(mongocrypt_ctx_t *ctx) {
     for (size_t i = 0; i < ectx->more_schemas.len; i++) {
         // Assert multiple collinfo protocol is enabled.
         // The old protocol required a driver only pass the first matching collinfo.
-        // If the old protocol is used, libmongocrypt might incorrectly assume collections have no schema configured.
+        // If the old protocol is used, libmongocrypt might incorrectly assume collections have no schema
+        // configured.
         BSON_ASSERT(ctx->crypt->multiple_collinfo_enabled);
 
         _mongocrypt_buffer_t *schema = &_mc_array_index(&ectx->more_schemas, _mongocrypt_buffer_t, i);
@@ -1967,8 +1968,8 @@ _fle2_strip_encryptionInformation(const char *cmd_name, bson_t *cmd /* in and ou
                 goto fail;
             }
             if (bson_has_field(cmd, "nsInfo.1")) {
-                CLIENT_ERR(
-                    "expected one namespace in `bulkWrite`, but found more than one. Only one namespace is supported.");
+                CLIENT_ERR("expected one namespace in `bulkWrite`, but found more than one. Only one namespace is "
+                           "supported.");
                 goto fail;
             }
             if (!mc_iter_document_as_bson(&nsInfo_iter, &nsInfo, status)) {
@@ -3687,10 +3688,10 @@ bool mongocrypt_ctx_encrypt_init(mongocrypt_ctx_t *ctx, const char *db, int32_t 
 
         if (ectx->more_target_colls.len > 0) {
             if (!ctx->crypt->multiple_collinfo_enabled) {
-                return _mongocrypt_ctx_fail_w_msg(
-                    ctx,
-                    "aggregate includes a $lookup stage, but libmongocrypt is not configured to support encrypting a "
-                    "command with multiple collections");
+                return _mongocrypt_ctx_fail_w_msg(ctx,
+                                                  "aggregate includes a $lookup stage, but libmongocrypt is not "
+                                                  "configured to support encrypting a "
+                                                  "command with multiple collections");
             }
         }
         // Create associated entries for schemas.
