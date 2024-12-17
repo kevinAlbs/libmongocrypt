@@ -26,6 +26,44 @@
 #include "mongocrypt-util-private.h" // mc_iter_document_as_bson
 #include "mongocrypt.h"
 
+static bool schema_is_empty(_mongocrypt_buffer_t *schema_buf) {
+    if (_mongocrypt_buffer_empty(schema_buf)) {
+        return true;
+    }
+    // may be represented as an empty BSON document.
+    bson_t schema_bson;
+    BSON_ASSERT(_mongocrypt_buffer_to_bson(schema_buf, &schema_bson));
+    return bson_empty(&schema_bson);
+}
+
+static bool has_any_csfle_schemas(mongocrypt_ctx_t *ctx) {
+    _mongocrypt_ctx_encrypt_t *ectx = (_mongocrypt_ctx_encrypt_t *)ctx;
+    if (!schema_is_empty(&ectx->schema)) {
+        return true;
+    }
+    for (size_t i = 0; i < ectx->more_target_colls.len; i++) {
+        _mongocrypt_buffer_t *jsonSchema_buf = &_mc_array_index(&ectx->more_schemas, _mongocrypt_buffer_t, i);
+        if (!schema_is_empty(jsonSchema_buf)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool has_any_qe_schemas(mongocrypt_ctx_t *ctx) {
+    _mongocrypt_ctx_encrypt_t *ectx = (_mongocrypt_ctx_encrypt_t *)ctx;
+    if (!schema_is_empty(&ectx->encrypted_field_config)) {
+        return true;
+    }
+    for (size_t i = 0; i < ectx->more_target_colls.len; i++) {
+        _mongocrypt_buffer_t *ef_buf = &_mc_array_index(&ectx->more_encrypted_field_config, _mongocrypt_buffer_t, i);
+        if (!schema_is_empty(ef_buf)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 /* _fle2_append_encryptedFieldConfig copies encryptedFieldConfig and applies
  * default state collection names for escCollection, eccCollection, and
  * ecocCollection if required. */
@@ -918,7 +956,6 @@ static const char *_mongo_db_collinfo(mongocrypt_ctx_t *ctx) {
 
 static bool _fle2_mongo_op_markings(mongocrypt_ctx_t *ctx, bson_t *out) {
     _mongocrypt_ctx_encrypt_t *ectx;
-    bson_t encrypted_field_config_bson = BSON_INITIALIZER;
 
     BSON_ASSERT_PARAM(ctx);
     BSON_ASSERT_PARAM(out);
@@ -928,47 +965,61 @@ static bool _fle2_mongo_op_markings(mongocrypt_ctx_t *ctx, bson_t *out) {
     BSON_ASSERT(ctx->state == MONGOCRYPT_CTX_NEED_MONGO_MARKINGS);
     BSON_ASSERT(context_uses_fle2(ctx));
 
-    if (!_mongocrypt_buffer_to_bson(&ectx->encrypted_field_config, &encrypted_field_config_bson)) {
-        return _mongocrypt_ctx_fail_w_msg(ctx, "unable to convert encrypted_field_config to BSON");
-    }
-
     const char *cmd_name = ectx->cmd_name;
 
+    if (!has_any_qe_schemas(ctx)) {
+        return true;
+    }
+
     mc_array_t listof_target_coll;
-    {
-        _mc_array_init(&listof_target_coll, sizeof(char *));
-        char *entry = bson_strdup(ectx->target_coll);
-        _mc_array_append_val(&listof_target_coll, entry);
-    }
+    _mc_array_init(&listof_target_coll, sizeof(char *));
     mc_array_t listof_target_ns;
-    {
-        _mc_array_init(&listof_target_ns, sizeof(char *));
-        char *entry = bson_strdup(ectx->target_ns);
-        _mc_array_append_val(&listof_target_ns, entry);
-    }
+    _mc_array_init(&listof_target_ns, sizeof(char *));
     mc_array_t listof_encrypted_field_config_bson;
-    {
-        _mc_array_init(&listof_encrypted_field_config_bson, sizeof(bson_t *));
-        bson_t *entry = bson_copy(&encrypted_field_config_bson);
-        _mc_array_append_val(&listof_encrypted_field_config_bson, entry);
-    }
+    _mc_array_init(&listof_encrypted_field_config_bson, sizeof(bson_t *));
     mc_array_t listof_deleteTokens;
-    {
-        _mc_array_init(&listof_deleteTokens, sizeof(bson_t *));
-        bson_t *entry = NULL;
-        _mc_array_append_val(&listof_deleteTokens, entry);
+    _mc_array_init(&listof_deleteTokens, sizeof(bson_t *));
+
+    if (!_mongocrypt_buffer_empty(&ectx->encrypted_field_config)) {
+        // Add the target collection.
+        {
+            char *entry = bson_strdup(ectx->target_coll);
+            _mc_array_append_val(&listof_target_coll, entry);
+        }
+        {
+            char *entry = bson_strdup(ectx->target_ns);
+            _mc_array_append_val(&listof_target_ns, entry);
+        }
+
+        {
+            bson_t encrypted_field_config_bson = BSON_INITIALIZER;
+            if (!_mongocrypt_buffer_to_bson(&ectx->encrypted_field_config, &encrypted_field_config_bson)) {
+                return _mongocrypt_ctx_fail_w_msg(ctx, "unable to convert encrypted_field_config to BSON");
+            }
+            bson_t *entry = bson_copy(&encrypted_field_config_bson);
+            _mc_array_append_val(&listof_encrypted_field_config_bson, entry);
+        }
+
+        {
+            bson_t *entry = NULL;
+            _mc_array_append_val(&listof_deleteTokens, entry);
+        }
     }
 
     for (size_t i = 0; i < ectx->more_encrypted_field_config.len; i++) {
+        _mongocrypt_buffer_t efc_buf = _mc_array_index(&ectx->more_encrypted_field_config, _mongocrypt_buffer_t, i);
+        if (_mongocrypt_buffer_empty(&efc_buf)) {
+            // Collection does not have encryptedFields.
+            continue;
+        }
+
         char *target_coll = bson_strdup(_mc_array_index(&ectx->more_target_colls, const char *, i));
         _mc_array_append_val(&listof_target_coll, target_coll);
 
         char *target_ns = bson_strdup_printf("%s.%s", ectx->cmd_db, target_coll);
         _mc_array_append_val(&listof_target_ns, target_ns);
 
-        _mongocrypt_buffer_t efc_buf = _mc_array_index(&ectx->more_encrypted_field_config, _mongocrypt_buffer_t, i);
         bson_t efc_bson;
-        BSON_ASSERT(efc_buf.data); // Should be set.
         BSON_ASSERT(_mongocrypt_buffer_to_bson(&efc_buf, &efc_bson));
         bson_t *efc_bson_entry = bson_copy(&efc_bson);
         _mc_array_append_val(&listof_encrypted_field_config_bson, efc_bson_entry);
@@ -1044,11 +1095,15 @@ static bool _create_markings_cmd_bson(mongocrypt_ctx_t *ctx, bson_t *out) {
 
     if (context_uses_fle2(ctx)) {
         // Defer to FLE2 to generate the markings command
-        return _fle2_mongo_op_markings(ctx, out);
+        if (!_fle2_mongo_op_markings(ctx, out)) {
+            return false;
+        }
     }
 
     // For FLE1:
-    if (ectx->more_target_colls.len > 0) {
+    if (ectx->more_target_colls.len > 0 && has_any_csfle_schemas(ctx)) {
+        // Only append "csfleEncryptionSchemas" if at least one exists.
+
         mongocrypt_status_t *status = ctx->status;
 
         BSON_ASSERT(ectx->target_db == NULL); // Multiple collections implies all collections are on same database.
@@ -1058,7 +1113,7 @@ static bool _create_markings_cmd_bson(mongocrypt_ctx_t *ctx, bson_t *out) {
         BSON_ASSERT(BSON_APPEND_DOCUMENT_BEGIN(out, "csfleEncryptionSchemas", &csfleEncryptionSchemas));
 
         // Append the target collection schema.
-        {
+        if (!schema_is_empty(&ectx->schema)) {
             bson_t jsonSchema;
             // We have a schema buffer. View it as BSON:
             if (!_mongocrypt_buffer_to_bson(&ectx->schema, &jsonSchema)) {
@@ -1081,7 +1136,10 @@ static bool _create_markings_cmd_bson(mongocrypt_ctx_t *ctx, bson_t *out) {
         for (size_t i = 0; i < ectx->more_target_colls.len; i++) {
             const char *target_coll = _mc_array_index(&ectx->more_target_colls, char *, i);
             _mongocrypt_buffer_t *jsonSchema_buf = &_mc_array_index(&ectx->more_schemas, _mongocrypt_buffer_t, i);
-            BSON_ASSERT(jsonSchema_buf->data); // Should be set.
+            if (schema_is_empty(jsonSchema_buf)) {
+                // Does not have a CSFLE schema set.
+                continue;
+            }
             bson_t jsonSchema;
 
             // We have a schema buffer. View it as BSON:
@@ -1103,8 +1161,10 @@ static bool _create_markings_cmd_bson(mongocrypt_ctx_t *ctx, bson_t *out) {
         }
 
         BSON_ASSERT(bson_append_document_end(out, &csfleEncryptionSchemas));
+    }
 
-    } else {
+    if (ectx->more_target_colls.len == 0 && !context_uses_fle2(ctx)) {
+        // Only one collection. Append the only jsonSchema or an empty jsonSchema.
         if (!_mongocrypt_buffer_empty(&ectx->schema)) {
             // We have a schema buffer. View it as BSON:
             if (!_mongocrypt_buffer_to_bson(&ectx->schema, &bson_view)) {
@@ -2079,38 +2139,51 @@ static bool _fle2_finalize(mongocrypt_ctx_t *ctx, mongocrypt_binary_t *out) {
     /* Append a new 'encryptionInformation'. */
     if (!result.must_omit && !ectx->used_empty_encryptedFields) {
         mc_array_t listof_target_coll;
-        {
-            _mc_array_init(&listof_target_coll, sizeof(char *));
-            char *entry = bson_strdup(ectx->target_coll);
-            _mc_array_append_val(&listof_target_coll, entry);
-        }
+        _mc_array_init(&listof_target_coll, sizeof(char *));
         mc_array_t listof_target_ns;
-        {
-            _mc_array_init(&listof_target_ns, sizeof(char *));
-            char *entry = bson_strdup(ectx->target_ns);
-            _mc_array_append_val(&listof_target_ns, entry);
-        }
+        _mc_array_init(&listof_target_ns, sizeof(char *));
         mc_array_t listof_encrypted_field_config_bson;
-        {
-            _mc_array_init(&listof_encrypted_field_config_bson, sizeof(bson_t *));
-            bson_t *entry = bson_copy(&encrypted_field_config_bson);
-            _mc_array_append_val(&listof_encrypted_field_config_bson, entry);
-        }
+        _mc_array_init(&listof_encrypted_field_config_bson, sizeof(bson_t *));
         mc_array_t listof_deleteTokens;
-        {
-            _mc_array_init(&listof_deleteTokens, sizeof(bson_t *));
-            bson_t *entry = deleteTokens ? bson_copy(deleteTokens) : NULL;
-            _mc_array_append_val(&listof_deleteTokens, entry);
+        _mc_array_init(&listof_deleteTokens, sizeof(bson_t *));
+
+        if (!_mongocrypt_buffer_empty(&ectx->encrypted_field_config)) {
+            // Add the target collection.
+            {
+                char *entry = bson_strdup(ectx->target_coll);
+                _mc_array_append_val(&listof_target_coll, entry);
+            }
+            {
+                char *entry = bson_strdup(ectx->target_ns);
+                _mc_array_append_val(&listof_target_ns, entry);
+            }
+
+            {
+                bson_t encrypted_field_config_bson = BSON_INITIALIZER;
+                if (!_mongocrypt_buffer_to_bson(&ectx->encrypted_field_config, &encrypted_field_config_bson)) {
+                    return _mongocrypt_ctx_fail_w_msg(ctx, "unable to convert encrypted_field_config to BSON");
+                }
+                bson_t *entry = bson_copy(&encrypted_field_config_bson);
+                _mc_array_append_val(&listof_encrypted_field_config_bson, entry);
+            }
+
+            {
+                bson_t *entry = deleteTokens ? bson_copy(deleteTokens) : NULL;
+                _mc_array_append_val(&listof_deleteTokens, entry);
+            }
         }
 
         for (size_t i = 0; i < ectx->more_encrypted_field_config.len; i++) {
+            _mongocrypt_buffer_t efc_buf = _mc_array_index(&ectx->more_encrypted_field_config, _mongocrypt_buffer_t, i);
+            if (schema_is_empty(&efc_buf)) {
+                continue;
+            }
             char *target_coll = bson_strdup(_mc_array_index(&ectx->more_target_colls, const char *, i));
             _mc_array_append_val(&listof_target_coll, target_coll);
 
             char *target_ns = bson_strdup_printf("%s.%s", ectx->cmd_db, target_coll);
             _mc_array_append_val(&listof_target_ns, target_ns);
 
-            _mongocrypt_buffer_t efc_buf = _mc_array_index(&ectx->more_encrypted_field_config, _mongocrypt_buffer_t, i);
             bson_t efc_bson;
             BSON_ASSERT(_mongocrypt_buffer_to_bson(&efc_buf, &efc_bson));
             bson_t *efc_bson_entry = bson_copy(&efc_bson);
