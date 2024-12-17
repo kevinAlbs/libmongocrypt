@@ -2807,8 +2807,6 @@ static bool _try_schema_from_cache(mongocrypt_ctx_t *ctx) {
             const char *target_db = ectx->cmd_db;
             char *more_target_ns = bson_strdup_printf("%s.%s", target_db, more_target_coll);
 
-            printf("trying to load more_target_ns(%s) from cache ... \n", more_target_ns);
-
             // Check if there is a listCollections result cached.
             if (!_mongocrypt_cache_get(&ctx->crypt->cache_collinfo,
                                        more_target_ns /* null terminated */,
@@ -2818,14 +2816,11 @@ static bool _try_schema_from_cache(mongocrypt_ctx_t *ctx) {
             }
 
             if (more_collinfo) {
-                printf("trying to load more_target_ns(%s) from cache ... found\n", more_target_ns);
                 if (!_set_schema_from_collinfo_for_more(ctx, more_target_ns, more_collinfo)) {
                     bson_free(more_target_ns);
                     bson_destroy(more_collinfo);
                     return _mongocrypt_ctx_fail(ctx);
                 }
-            } else {
-                printf("trying to load more_target_ns(%s) from cache ... not found\n", more_target_ns);
             }
             bson_free(more_target_ns);
         }
