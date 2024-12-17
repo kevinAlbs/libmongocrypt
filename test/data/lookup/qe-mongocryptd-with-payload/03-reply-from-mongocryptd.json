@@ -36,7 +36,7 @@
                         {
                             "keyId": {
                                 "$binary": {
-                                    "base64": "YWFhYWFhYWFhYWFhYWFhYQ==",
+                                    "base64": "uJ2Njy8YQDuYKbzu2vEKQg==",
                                     "subType": "04"
                                 }
                             },
@@ -56,7 +56,7 @@
                         {
                             "keyId": {
                                 "$binary": {
-                                    "base64": "YWFhYWFhYWFhYWFhYWFhYQ==",
+                                    "base64": "uJ2Njy8YQDuYKbzu2vEKQg==",
                                     "subType": "04"
                                 }
                             },
