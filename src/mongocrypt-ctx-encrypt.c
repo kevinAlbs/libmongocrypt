@@ -766,11 +766,9 @@ static bool command_needs_deleteTokens(mongocrypt_ctx_t *ctx, const char *comman
  * If a collection has an encryptedFields document, it uses FLE 2.
  */
 static bool context_uses_fle2(mongocrypt_ctx_t *ctx) {
-    _mongocrypt_ctx_encrypt_t *ectx = (_mongocrypt_ctx_encrypt_t *)ctx;
-
     BSON_ASSERT_PARAM(ctx);
 
-    return !_mongocrypt_buffer_empty(&ectx->encrypted_field_config); // TODO: return true if ANY have EFC?
+    return has_any_qe_schemas(ctx);
 }
 
 /* _fle2_collect_keys_for_deleteTokens requests keys required to produce
