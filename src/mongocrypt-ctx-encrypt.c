@@ -1162,7 +1162,7 @@ static bool _create_markings_cmd_bson(mongocrypt_ctx_t *ctx, bson_t *out) {
         BSON_ASSERT(bson_append_document_end(out, &csfleEncryptionSchemas));
     }
 
-    if (ectx->more_target_colls.len == 0 && !context_uses_fle2(ctx)) {
+    if ((ectx->more_target_colls.len == 0 || !has_any_csfle_schemas(ctx)) && !context_uses_fle2(ctx)) {
         // Only one collection. Append the only jsonSchema or an empty jsonSchema.
         if (!_mongocrypt_buffer_empty(&ectx->schema)) {
             // We have a schema buffer. View it as BSON:
@@ -2058,7 +2058,6 @@ fail:
 static bool _fle2_finalize(mongocrypt_ctx_t *ctx, mongocrypt_binary_t *out) {
     bson_t converted;
     _mongocrypt_ctx_encrypt_t *ectx;
-    bson_t encrypted_field_config_bson;
     bson_t original_cmd_bson;
 
     BSON_ASSERT_PARAM(ctx);
@@ -2071,10 +2070,6 @@ static bool _fle2_finalize(mongocrypt_ctx_t *ctx, mongocrypt_binary_t *out) {
 
     if (ectx->explicit) {
         return _mongocrypt_ctx_fail_w_msg(ctx, "explicit encryption is not yet supported. See MONGOCRYPT-409.");
-    }
-
-    if (!_mongocrypt_buffer_to_bson(&ectx->encrypted_field_config, &encrypted_field_config_bson)) {
-        return _mongocrypt_ctx_fail_w_msg(ctx, "malformed bson in encrypted_field_config_bson");
     }
 
     if (!_mongocrypt_buffer_to_bson(&ectx->original_cmd, &original_cmd_bson)) {
