@@ -50,9 +50,9 @@ typedef enum tester_mongocrypt_flags {
     TESTER_MONGOCRYPT_SKIP_INIT = 1 << 4,
 } tester_mongocrypt_flags;
 
-/* Arbitrary max of 2048 instances of temporary test data. Increase as needed.
+/* Arbitrary max of 4096 instances of temporary test data. Increase as needed.
  */
-#define TEST_DATA_COUNT 2048
+#define TEST_DATA_COUNT 4096
 
 typedef struct __mongocrypt_tester_t {
     int test_count;
