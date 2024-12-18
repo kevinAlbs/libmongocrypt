@@ -38,10 +38,15 @@ static bool schema_is_empty(_mongocrypt_buffer_t *schema_buf) {
 
 static bool has_any_csfle_schemas(mongocrypt_ctx_t *ctx) {
     _mongocrypt_ctx_encrypt_t *ectx = (_mongocrypt_ctx_encrypt_t *)ctx;
+
+    if (mc_schema_broker_has_any_csfle_schemas(ectx->sb)) {
+        return true;
+    }
+
     if (!schema_is_empty(&ectx->schema)) {
         return true;
     }
-    for (size_t i = 0; i < ectx->more_target_colls.len; i++) {
+    for (size_t i = 0; i < ectx->more_target_colls_old.len; i++) {
         _mongocrypt_buffer_t *jsonSchema_buf = &_mc_array_index(&ectx->more_schemas, _mongocrypt_buffer_t, i);
         if (!schema_is_empty(jsonSchema_buf)) {
             return true;
@@ -52,10 +57,15 @@ static bool has_any_csfle_schemas(mongocrypt_ctx_t *ctx) {
 
 static bool has_any_qe_schemas(mongocrypt_ctx_t *ctx) {
     _mongocrypt_ctx_encrypt_t *ectx = (_mongocrypt_ctx_encrypt_t *)ctx;
+
+    if (mc_schema_broker_has_any_qe_schemas(ectx->sb)) {
+        return true;
+    }
+
     if (!schema_is_empty(&ectx->encrypted_field_config)) {
         return true;
     }
-    for (size_t i = 0; i < ectx->more_target_colls.len; i++) {
+    for (size_t i = 0; i < ectx->more_target_colls_old.len; i++) {
         _mongocrypt_buffer_t *ef_buf = &_mc_array_index(&ectx->more_encrypted_field_config, _mongocrypt_buffer_t, i);
         if (!schema_is_empty(ef_buf)) {
             return true;
@@ -151,6 +161,11 @@ static bool _fle2_append_encryptionInformation(const mongocrypt_ctx_t *ctx,
     BSON_ASSERT(listof_target_ns->len == listof_encryptedFieldConfig->len);
     BSON_ASSERT(listof_target_ns->len == listof_deleteTokens->len);
     BSON_ASSERT(listof_target_ns->len == listof_target_coll->len);
+
+    _mongocrypt_ctx_encrypt_t *ectx = (_mongocrypt_ctx_encrypt_t *)ctx;
+    if (!mc_schema_broker_append_encryptionInformation(ectx->sb, dst, status)) {
+        return false;
+    }
 
     if (!BSON_APPEND_DOCUMENT_BEGIN(dst, "encryptionInformation", &encryption_information_bson)) {
         CLIENT_ERR("unable to begin appending 'encryptionInformation'");
@@ -423,16 +438,21 @@ fail:
 /* Construct the list collections command to send. */
 static bool _mongo_op_collinfo(mongocrypt_ctx_t *ctx, mongocrypt_binary_t *out) {
     _mongocrypt_ctx_encrypt_t *ectx;
-    bson_t *cmd;
+    bson_t *cmd = bson_new();
 
     BSON_ASSERT_PARAM(ctx);
     BSON_ASSERT_PARAM(out);
 
     ectx = (_mongocrypt_ctx_encrypt_t *)ctx;
-    if (ectx->more_target_colls.len == 0) {
-        cmd = BCON_NEW("name", BCON_UTF8(ectx->target_coll));
+
+    if (!mc_schema_broker_append_listCollections_filter(ectx->sb, cmd, ctx->status)) {
+        _mongocrypt_ctx_fail(ctx);
+        return false;
+    }
+
+    if (ectx->more_target_colls_old.len == 0) {
+        BCON_APPEND(cmd, "name", BCON_UTF8(ectx->target_coll));
     } else {
-        cmd = bson_new();
         bson_t in;
         BSON_ASSERT(BSON_APPEND_DOCUMENT_BEGIN(cmd, "name", &in));
         bson_array_builder_t *bab;
@@ -440,8 +460,8 @@ static bool _mongo_op_collinfo(mongocrypt_ctx_t *ctx, mongocrypt_binary_t *out) 
         if (_mongocrypt_buffer_empty(&ectx->schema) && _mongocrypt_buffer_empty(&ectx->encrypted_field_config)) {
             BSON_ASSERT(bson_array_builder_append_utf8(bab, ectx->target_coll, -1));
         }
-        for (size_t i = 0; i < ectx->more_target_colls.len; i++) {
-            const char *name = _mc_array_index(&ectx->more_target_colls, const char *, i);
+        for (size_t i = 0; i < ectx->more_target_colls_old.len; i++) {
+            const char *name = _mc_array_index(&ectx->more_target_colls_old, const char *, i);
             _mongocrypt_buffer_t *schema = &_mc_array_index(&ectx->more_schemas, _mongocrypt_buffer_t, i);
             _mongocrypt_buffer_t *ef = &_mc_array_index(&ectx->more_encrypted_field_config, _mongocrypt_buffer_t, i);
             if (_mongocrypt_buffer_empty(schema) && _mongocrypt_buffer_empty(ef)) {
@@ -480,7 +500,7 @@ static bool _set_schema_from_collinfo_for_more(mongocrypt_ctx_t *ctx, const char
     bool ok = false;
 
     _mongocrypt_ctx_encrypt_t *ectx = (_mongocrypt_ctx_encrypt_t *)ctx;
-    BSON_ASSERT(ectx->more_target_colls.len > 0);
+    BSON_ASSERT(ectx->more_target_colls_old.len > 0);
     bson_iter_t collinfo_iter;
 
     if (!bson_iter_init(&collinfo_iter, collinfo)) {
@@ -496,8 +516,8 @@ static bool _set_schema_from_collinfo_for_more(mongocrypt_ctx_t *ctx, const char
         const char *target_db = ectx->cmd_db;
 
         // Find matching index.
-        for (index = 0; index < ectx->more_target_colls.len; index++) {
-            const char *target_coll = _mc_array_index(&ectx->more_target_colls, const char *, index);
+        for (index = 0; index < ectx->more_target_colls_old.len; index++) {
+            const char *target_coll = _mc_array_index(&ectx->more_target_colls_old, const char *, index);
             char *target_ns = bson_strdup_printf("%s.%s", target_db, target_coll);
             if (0 == strcmp(ns, target_ns)) {
                 matched = true;
@@ -602,8 +622,12 @@ static bool _set_schema_from_collinfo(mongocrypt_ctx_t *ctx, const char *ns, bso
     /* Parse out the schema. */
     ectx = (_mongocrypt_ctx_encrypt_t *)ctx;
 
+    if (!mc_schema_broker_satisfy_from_collinfo(ectx->sb, ns, collinfo, ctx->status)) {
+        return _mongocrypt_ctx_fail(ctx);
+    }
+
     // Check if this schema is for the target collection or a referenced collection.
-    if (0 != strcmp(ns, ectx->target_ns) && ectx->more_target_colls.len > 0) {
+    if (0 != strcmp(ns, ectx->target_ns) && ectx->more_target_colls_old.len > 0) {
         BSON_ASSERT(ectx->target_db == NULL); // Multiple collections implies all collections are on same database.
         return _set_schema_from_collinfo_for_more(ctx, ns, collinfo);
     }
@@ -895,6 +919,14 @@ static bool _mongo_done_collinfo(mongocrypt_ctx_t *ctx) {
         bson_destroy(&empty_collinfo);
     }
 
+    if (!mc_schema_broker_satisfy_remaining_with_empty_schemas(ectx->sb, ctx->status)) {
+        return _mongocrypt_ctx_fail(ctx);
+    }
+
+    if (!mc_schema_broker_apply_to_cache(ectx->sb, &ctx->crypt->cache_collinfo, ctx->status)) {
+        return _mongocrypt_ctx_fail(ctx);
+    }
+
     for (size_t i = 0; i < ectx->more_schemas.len; i++) {
         // Assert multiple collinfo protocol is enabled.
         // The old protocol required a driver only pass the first matching collinfo.
@@ -906,7 +938,7 @@ static bool _mongo_done_collinfo(mongocrypt_ctx_t *ctx) {
         if (_mongocrypt_buffer_empty(schema)) {
             bson_t empty_collinfo = BSON_INITIALIZER;
 
-            const char *coll = _mc_array_index(&ectx->more_target_colls, const char *, i);
+            const char *coll = _mc_array_index(&ectx->more_target_colls_old, const char *, i);
             char *ns = bson_strdup_printf("%s.%s", ectx->target_db ? ectx->target_db : ectx->cmd_db, coll);
 
             /* If no collinfo was fed, apply and cache an empty collinfo. */
@@ -1012,7 +1044,7 @@ static bool _fle2_mongo_op_markings(mongocrypt_ctx_t *ctx, bson_t *out) {
             continue;
         }
 
-        char *target_coll = bson_strdup(_mc_array_index(&ectx->more_target_colls, const char *, i));
+        char *target_coll = bson_strdup(_mc_array_index(&ectx->more_target_colls_old, const char *, i));
         _mc_array_append_val(&listof_target_coll, target_coll);
 
         char *target_ns = bson_strdup_printf("%s.%s", ectx->cmd_db, target_coll);
@@ -1099,8 +1131,12 @@ static bool _create_markings_cmd_bson(mongocrypt_ctx_t *ctx, bson_t *out) {
         }
     }
 
+    if (!mc_schema_broker_append_csfleEncryptionSchemas(ectx->sb, out, ctx->status)) {
+        return _mongocrypt_ctx_fail(ctx);
+    }
+
     // For FLE1:
-    if (ectx->more_target_colls.len > 0 && has_any_csfle_schemas(ctx)) {
+    if (ectx->more_target_colls_old.len > 0 && has_any_csfle_schemas(ctx)) {
         // Only append "csfleEncryptionSchemas" if at least one exists.
 
         mongocrypt_status_t *status = ctx->status;
@@ -1132,8 +1168,8 @@ static bool _create_markings_cmd_bson(mongocrypt_ctx_t *ctx, bson_t *out) {
         }
 
         // Append the referenced collection schemas.
-        for (size_t i = 0; i < ectx->more_target_colls.len; i++) {
-            const char *target_coll = _mc_array_index(&ectx->more_target_colls, char *, i);
+        for (size_t i = 0; i < ectx->more_target_colls_old.len; i++) {
+            const char *target_coll = _mc_array_index(&ectx->more_target_colls_old, char *, i);
             _mongocrypt_buffer_t *jsonSchema_buf = &_mc_array_index(&ectx->more_schemas, _mongocrypt_buffer_t, i);
             if (schema_is_empty(jsonSchema_buf)) {
                 // Does not have a CSFLE schema set.
@@ -1162,7 +1198,7 @@ static bool _create_markings_cmd_bson(mongocrypt_ctx_t *ctx, bson_t *out) {
         BSON_ASSERT(bson_append_document_end(out, &csfleEncryptionSchemas));
     }
 
-    if ((ectx->more_target_colls.len == 0 || !has_any_csfle_schemas(ctx)) && !context_uses_fle2(ctx)) {
+    if ((ectx->more_target_colls_old.len == 0 || !has_any_csfle_schemas(ctx)) && !context_uses_fle2(ctx)) {
         // Only one collection. Append the only jsonSchema or an empty jsonSchema.
         if (!_mongocrypt_buffer_empty(&ectx->schema)) {
             // We have a schema buffer. View it as BSON:
@@ -2172,7 +2208,7 @@ static bool _fle2_finalize(mongocrypt_ctx_t *ctx, mongocrypt_binary_t *out) {
             if (schema_is_empty(&efc_buf)) {
                 continue;
             }
-            char *target_coll = bson_strdup(_mc_array_index(&ectx->more_target_colls, const char *, i));
+            char *target_coll = bson_strdup(_mc_array_index(&ectx->more_target_colls_old, const char *, i));
             _mc_array_append_val(&listof_target_coll, target_coll);
 
             char *target_ns = bson_strdup_printf("%s.%s", ectx->cmd_db, target_coll);
@@ -2597,10 +2633,11 @@ static void _cleanup(mongocrypt_ctx_t *ctx) {
     bson_free(ectx->cmd_db);
     bson_free(ectx->target_db);
     bson_free(ectx->target_coll);
-    for (size_t i = 0; i < ectx->more_target_colls.len; i++) {
-        bson_free(_mc_array_index(&ectx->more_target_colls, char *, i));
+    for (size_t i = 0; i < ectx->more_target_colls_old.len; i++) {
+        bson_free(_mc_array_index(&ectx->more_target_colls_old, char *, i));
     }
-    _mc_array_destroy(&ectx->more_target_colls);
+    _mc_array_destroy(&ectx->more_target_colls_old);
+    mc_schema_broker_destroy(ectx->sb);
     for (size_t i = 0; i < ectx->more_schemas.len; i++) {
         _mongocrypt_buffer_t *buf = &_mc_array_index(&ectx->more_schemas, _mongocrypt_buffer_t, i);
         _mongocrypt_buffer_cleanup(buf);
@@ -2661,7 +2698,7 @@ static bool _try_schema_from_schema_map(mongocrypt_ctx_t *ctx) {
     for (size_t i = 0; i < ectx->more_schemas.len; i++) {
         _mongocrypt_buffer_t *schema = &_mc_array_index(&ectx->more_schemas, _mongocrypt_buffer_t, i);
         if (_mongocrypt_buffer_empty(schema)) {
-            const char *more_target_coll = _mc_array_index(&ectx->more_target_colls, const char *, i);
+            const char *more_target_coll = _mc_array_index(&ectx->more_target_colls_old, const char *, i);
             BSON_ASSERT(ectx->target_db == NULL); // Multiple collections implies all collections are on same database.
             const char *target_db = ectx->cmd_db;
             char *more_target_ns = bson_strdup_printf("%s.%s", target_db, more_target_coll);
@@ -2712,6 +2749,10 @@ static bool _fle2_try_encrypted_field_config_from_map(mongocrypt_ctx_t *ctx) {
         return _mongocrypt_ctx_fail_w_msg(ctx, "unable to convert encrypted_field_config_map to BSON");
     }
 
+    if (!mc_schema_broker_satisfy_from_encryptedFieldsMap(ectx->sb, &encrypted_field_config_map, ctx->status)) {
+        return _mongocrypt_ctx_fail(ctx);
+    }
+
     if (bson_iter_init_find(&iter, &encrypted_field_config_map, ectx->target_ns)) {
         if (!_mongocrypt_buffer_copy_from_document_iter(&ectx->encrypted_field_config, &iter)) {
             return _mongocrypt_ctx_fail_w_msg(ctx,
@@ -2731,7 +2772,7 @@ static bool _fle2_try_encrypted_field_config_from_map(mongocrypt_ctx_t *ctx) {
     for (size_t i = 0; i < ectx->more_encrypted_field_config.len; i++) {
         _mongocrypt_buffer_t *ef_buf = &_mc_array_index(&ectx->more_encrypted_field_config, _mongocrypt_buffer_t, i);
         if (_mongocrypt_buffer_empty(ef_buf)) {
-            const char *more_target_coll = _mc_array_index(&ectx->more_target_colls, const char *, i);
+            const char *more_target_coll = _mc_array_index(&ectx->more_target_colls_old, const char *, i);
             BSON_ASSERT(ectx->target_db == NULL); // Multiple collections implies all collections are on same database.
             const char *target_db = ectx->cmd_db;
             char *more_target_ns = bson_strdup_printf("%s.%s", target_db, more_target_coll);
@@ -2774,6 +2815,10 @@ static bool _try_schema_from_cache(mongocrypt_ctx_t *ctx) {
 
     ectx = (_mongocrypt_ctx_encrypt_t *)ctx;
 
+    if (!mc_schema_broker_satisfy_from_cache(ectx->sb, &ctx->crypt->cache_collinfo, ctx->status)) {
+        return false;
+    }
+
     /* Otherwise, we need a remote schema. Check if we have a response to
      * listCollections cached. */
     if (!_mongocrypt_cache_get(&ctx->crypt->cache_collinfo,
@@ -2791,10 +2836,10 @@ static bool _try_schema_from_cache(mongocrypt_ctx_t *ctx) {
 
     bson_destroy(collinfo);
 
-    if (ectx->more_target_colls.len > 0) {
+    if (ectx->more_target_colls_old.len > 0) {
         bson_t *more_collinfo = NULL;
-        for (size_t i = 0; i < ectx->more_target_colls.len; i++) {
-            const char *more_target_coll = _mc_array_index(&ectx->more_target_colls, const char *, i);
+        for (size_t i = 0; i < ectx->more_target_colls_old.len; i++) {
+            const char *more_target_coll = _mc_array_index(&ectx->more_target_colls_old, const char *, i);
             // Get the target database. The target database may be the same as the command database.
 
             BSON_ASSERT(ectx->target_db == NULL); // Multiple collections implies all collections are on same database.
@@ -3434,7 +3479,9 @@ static bool needs_ismaster_check(mongocrypt_ctx_t *ctx) {
 
 // `find_collections_in_pipeline` finds other collection names in an aggregate pipeline that may need schemas.
 static bool find_collections_in_pipeline(bson_iter_t pipeline_iter,
+                                         const char *db,
                                          mc_array_t *colls,
+                                         mc_schema_broker_t *sb,
                                          mstr_view path,
                                          const char *target_coll,
                                          mongocrypt_status_t *status) {
@@ -3475,6 +3522,8 @@ static bool find_collections_in_pipeline(bson_iter_t pipeline_iter,
                     }
                     char *from = bson_strdup(bson_iter_utf8(&lookup_iter, NULL));
 
+                    mc_schema_broker_request(sb, db, from);
+
                     bool is_duplicate = false;
                     // Check for duplicates.
                     for (size_t i = 0; i < colls->len; i++) {
@@ -3498,7 +3547,7 @@ static bool find_collections_in_pipeline(bson_iter_t pipeline_iter,
                     mstr subpath = mstr_append(path, mstrv_lit("."));
                     mstr_inplace_append(&subpath, mstrv_view_cstr(stage_key));
                     mstr_inplace_append(&subpath, mstrv_lit(".$lookup.pipeline"));
-                    if (!find_collections_in_pipeline(lookup_iter, colls, subpath.view, target_coll, status)) {
+                    if (!find_collections_in_pipeline(lookup_iter, db, colls, sb, subpath.view, target_coll, status)) {
                         mstr_free(subpath);
                         return false;
                     }
@@ -3521,7 +3570,7 @@ static bool find_collections_in_pipeline(bson_iter_t pipeline_iter,
                 mstr_inplace_append(&subpath, mstrv_view_cstr(stage_key));
                 mstr_inplace_append(&subpath, mstrv_lit(".$facet."));
                 mstr_inplace_append(&subpath, mstrv_view_cstr(field));
-                if (!find_collections_in_pipeline(facet_iter, colls, subpath.view, target_coll, status)) {
+                if (!find_collections_in_pipeline(facet_iter, db, colls, sb, subpath.view, target_coll, status)) {
                     mstr_free(subpath);
                     return false;
                 }
@@ -3555,7 +3604,13 @@ static bool find_collections_in_pipeline(bson_iter_t pipeline_iter,
                     mstr subpath = mstr_append(path, mstrv_lit("."));
                     mstr_inplace_append(&subpath, mstrv_view_cstr(stage_key));
                     mstr_inplace_append(&subpath, mstrv_lit(".$unionWith.pipeline"));
-                    if (!find_collections_in_pipeline(unionWith_iter, colls, subpath.view, target_coll, status)) {
+                    if (!find_collections_in_pipeline(unionWith_iter,
+                                                      db,
+                                                      colls,
+                                                      sb,
+                                                      subpath.view,
+                                                      target_coll,
+                                                      status)) {
                         mstr_free(subpath);
                         return false;
                     }
@@ -3569,7 +3624,9 @@ static bool find_collections_in_pipeline(bson_iter_t pipeline_iter,
 }
 
 static bool find_collections_in_agg(mongocrypt_binary_t *cmd,
+                                    const char *db,
                                     mc_array_t *colls,
+                                    mc_schema_broker_t *sb,
                                     const char *target_coll,
                                     mongocrypt_status_t *status) {
     bson_t cmd_bson;
@@ -3584,7 +3641,7 @@ static bool find_collections_in_agg(mongocrypt_binary_t *cmd,
         return true;
     }
 
-    if (!find_collections_in_pipeline(iter, colls, mstrv_lit("aggregate.pipeline"), target_coll, status)) {
+    if (!find_collections_in_pipeline(iter, db, colls, sb, mstrv_lit("aggregate.pipeline"), target_coll, status)) {
         return false;
     }
 
@@ -3623,7 +3680,8 @@ bool mongocrypt_ctx_encrypt_init(mongocrypt_ctx_t *ctx, const char *db, int32_t 
     ctx->vtable.finalize = _finalize;
     ctx->vtable.cleanup = _cleanup;
     ectx->bypass_query_analysis = ctx->crypt->opts.bypass_query_analysis;
-    _mc_array_init(&ectx->more_target_colls, sizeof(char *));
+    ectx->sb = mc_schema_broker_new();
+    _mc_array_init(&ectx->more_target_colls_old, sizeof(char *));
     _mc_array_init(&ectx->more_schemas, sizeof(_mongocrypt_buffer_t));
     _mc_array_init(&ectx->more_used_local_schema, sizeof(bool));
     _mc_array_init(&ectx->more_encrypted_field_config, sizeof(_mongocrypt_buffer_t));
@@ -3653,6 +3711,7 @@ bool mongocrypt_ctx_encrypt_init(mongocrypt_ctx_t *ctx, const char *db, int32_t 
         }
 
         ectx->target_ns = bson_strdup_printf("%s.%s", ectx->target_db, ectx->target_coll);
+        mc_schema_broker_request(ectx->sb, ectx->target_db, ectx->target_coll);
     } else {
         bool bypass;
         if (!_check_cmd_for_auto_encrypt(cmd, &bypass, &ectx->target_coll, ctx->status)) {
@@ -3671,15 +3730,21 @@ bool mongocrypt_ctx_encrypt_init(mongocrypt_ctx_t *ctx, const char *db, int32_t 
             return _mongocrypt_ctx_fail_w_msg(ctx, "unexpected error: did not bypass or error but no collection name");
         }
         ectx->target_ns = bson_strdup_printf("%s.%s", ectx->cmd_db, ectx->target_coll);
+        mc_schema_broker_request(ectx->sb, ectx->cmd_db, ectx->target_coll);
     }
 
     if (0 == strcmp(ectx->cmd_name, "aggregate")) {
-        if (!find_collections_in_agg(cmd, &ectx->more_target_colls, ectx->target_coll, ctx->status)) {
+        if (!find_collections_in_agg(cmd,
+                                     ectx->cmd_db,
+                                     &ectx->more_target_colls_old,
+                                     ectx->sb,
+                                     ectx->target_coll,
+                                     ctx->status)) {
             _mongocrypt_ctx_fail(ctx);
             return false;
         }
 
-        if (ectx->more_target_colls.len > 0) {
+        if (mc_schema_broker_has_multiple_ns(ectx->sb) || ectx->more_target_colls_old.len > 0) {
             if (!ctx->crypt->multiple_collinfo_enabled) {
                 return _mongocrypt_ctx_fail_w_msg(ctx,
                                                   "aggregate includes a $lookup stage, but libmongocrypt is not "
@@ -3688,7 +3753,7 @@ bool mongocrypt_ctx_encrypt_init(mongocrypt_ctx_t *ctx, const char *db, int32_t 
             }
         }
         // Create associated entries for schemas.
-        for (size_t i = 0; i < ectx->more_target_colls.len; i++) {
+        for (size_t i = 0; i < ectx->more_target_colls_old.len; i++) {
             _mongocrypt_buffer_t empty;
             _mongocrypt_buffer_init(&empty);
             _mc_array_append_val(&ectx->more_schemas, empty);

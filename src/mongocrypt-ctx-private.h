@@ -20,6 +20,7 @@
 #include "mc-efc-private.h"
 #include "mc-optional-private.h"
 #include "mc-rangeopts-private.h"
+#include "mc-schema-broker-private.h"
 #include "mongocrypt-buffer-private.h"
 #include "mongocrypt-endpoint-private.h"
 #include "mongocrypt-key-broker-private.h"
@@ -160,7 +161,7 @@ typedef struct {
 
     // `more_target_colls` are additional target collections. For `aggregate`, this includes collections referenced in
     // $lookup stages.
-    mc_array_t more_target_colls;
+    mc_array_t more_target_colls_old;
 
     _mongocrypt_buffer_t list_collections_filter;
     _mongocrypt_buffer_t schema;
@@ -217,6 +218,8 @@ typedef struct {
 
     // cmd_name is the first BSON field in original_cmd for auto encryption.
     const char *cmd_name;
+
+    mc_schema_broker_t *sb;
 } _mongocrypt_ctx_encrypt_t;
 
 // `_mongocrypt_ctx_encrypt_t` inherits extended alignment from libbson. To dynamically allocate, use
