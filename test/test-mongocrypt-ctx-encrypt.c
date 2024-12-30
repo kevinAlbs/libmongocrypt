@@ -3508,7 +3508,7 @@ static void _test_encrypt_fle2_omits_encryptionInformation(_mongocrypt_tester_t 
     {
         // TODO(MONGOCRYPT-572): This test uses the QEv1 protocol. Update this test for QEv2 or remove. Note: decrypting
         // QEv1 is still supported.
-        mongocrypt_t *crypt = _mongocrypt_tester_mongocrypt(TESTER_MONGOCRYPT_WITH_CRYPT_V1);
+        mongocrypt_t *crypt = _mongocrypt_tester_mongocrypt(TESTER_MONGOCRYPT_DEFAULT);
         mongocrypt_ctx_t *ctx;
 
         ctx = mongocrypt_ctx_new(crypt);
@@ -3553,7 +3553,7 @@ static void _test_encrypt_fle2_omits_encryptionInformation(_mongocrypt_tester_t 
     {
         // TODO(MONGOCRYPT-572): This test uses the QEv1 protocol. Update this test for QEv2 or remove. Note: decrypting
         // QEv1 is still supported.
-        mongocrypt_t *crypt = _mongocrypt_tester_mongocrypt(TESTER_MONGOCRYPT_WITH_CRYPT_V1);
+        mongocrypt_t *crypt = _mongocrypt_tester_mongocrypt(TESTER_MONGOCRYPT_DEFAULT);
         mongocrypt_ctx_t *ctx;
 
         ctx = mongocrypt_ctx_new(crypt);
@@ -3602,7 +3602,7 @@ static void _test_encrypt_fle2_explain_with_mongocryptd(_mongocrypt_tester_t *te
     {
         // TODO(MONGOCRYPT-572): This test uses the QEv1 protocol. Update this test for QEv2 or remove. Note: decrypting
         // QEv1 is still supported.
-        mongocrypt_t *crypt = _mongocrypt_tester_mongocrypt(TESTER_MONGOCRYPT_WITH_CRYPT_V1);
+        mongocrypt_t *crypt = _mongocrypt_tester_mongocrypt(TESTER_MONGOCRYPT_DEFAULT);
         mongocrypt_ctx_t *ctx = mongocrypt_ctx_new(crypt);
 
         ASSERT_OK(
