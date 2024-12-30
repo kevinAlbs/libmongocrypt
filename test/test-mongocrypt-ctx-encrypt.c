@@ -3794,9 +3794,7 @@ static void _test_encrypt_fle1_explain_with_csfle(_mongocrypt_tester_t *tester) 
 // Test that an input command with $db preserves $db in the output.
 static void _test_dollardb_preserved(_mongocrypt_tester_t *tester) {
     /* Test with an encrypted value. */
-    // TODO(MONGOCRYPT-572): This test uses the QEv1 protocol. Update this test for QEv2 or remove. Note: decrypting
-    // QEv1 is still supported.
-    mongocrypt_t *crypt = _mongocrypt_tester_mongocrypt(TESTER_MONGOCRYPT_WITH_CRYPT_V1);
+    mongocrypt_t *crypt = _mongocrypt_tester_mongocrypt(TESTER_MONGOCRYPT_DEFAULT);
     mongocrypt_ctx_t *ctx = mongocrypt_ctx_new(crypt);
 
     ASSERT_OK(mongocrypt_ctx_encrypt_init(ctx, "db", -1, TEST_FILE("./test/data/dollardb/preserved/cmd.json")), ctx);
