@@ -3667,8 +3667,7 @@ static void _test_encrypt_fle2_explain_with_csfle(_mongocrypt_tester_t *tester) 
     /* Test with an encrypted value. Otherwise 'encryptionInformation' is not
      * appended. */
     {
-        mongocrypt_t *crypt =
-            _mongocrypt_tester_mongocrypt(TESTER_MONGOCRYPT_WITH_CRYPT_SHARED_LIB | TESTER_MONGOCRYPT_WITH_CRYPT_V1);
+        mongocrypt_t *crypt = _mongocrypt_tester_mongocrypt(TESTER_MONGOCRYPT_WITH_CRYPT_SHARED_LIB);
         mongocrypt_ctx_t *ctx = mongocrypt_ctx_new(crypt);
 
         ASSERT_OK(mongocrypt_ctx_encrypt_init(ctx, "db", -1, TEST_FILE("./test/data/fle2-explain/with-csfle/cmd.json")),
@@ -4328,9 +4327,7 @@ static void _test_encrypt_macos_no_ctr(_mongocrypt_tester_t *tester) {
 
     _mongocrypt_buffer_copy_from_hex(&key_id, "ABCDEFAB123498761234123456789012");
 
-    // TODO(MONGOCRYPT-572): This test uses the QEv1 protocol. Update this test for QEv2 or remove. Note: decrypting
-    // QEv1 is still supported.
-    mongocrypt_t *crypt = _mongocrypt_tester_mongocrypt(TESTER_MONGOCRYPT_WITH_CRYPT_V1);
+    mongocrypt_t *crypt = _mongocrypt_tester_mongocrypt(TESTER_MONGOCRYPT_DEFAULT);
     mongocrypt_ctx_t *ctx = mongocrypt_ctx_new(crypt);
 
     ASSERT_OK(mongocrypt_ctx_setopt_algorithm(ctx, MONGOCRYPT_ALGORITHM_UNINDEXED_STR, -1), ctx);
