@@ -3506,8 +3506,6 @@ static void _test_encrypt_fle2_omits_encryptionInformation(_mongocrypt_tester_t 
     /* 'find' does not include 'encryptionInformation' if no fields are
      * encrypted. */
     {
-        // TODO(MONGOCRYPT-572): This test uses the QEv1 protocol. Update this test for QEv2 or remove. Note: decrypting
-        // QEv1 is still supported.
         mongocrypt_t *crypt = _mongocrypt_tester_mongocrypt(TESTER_MONGOCRYPT_DEFAULT);
         mongocrypt_ctx_t *ctx;
 
@@ -3551,8 +3549,6 @@ static void _test_encrypt_fle2_omits_encryptionInformation(_mongocrypt_tester_t 
     /* 'find' includes encryptionInformation if the initial command includes an
      * explicitly encrypted payload. */
     {
-        // TODO(MONGOCRYPT-572): This test uses the QEv1 protocol. Update this test for QEv2 or remove. Note: decrypting
-        // QEv1 is still supported.
         mongocrypt_t *crypt = _mongocrypt_tester_mongocrypt(TESTER_MONGOCRYPT_DEFAULT);
         mongocrypt_ctx_t *ctx;
 
@@ -3600,8 +3596,6 @@ static void _test_encrypt_fle2_explain_with_mongocryptd(_mongocrypt_tester_t *te
     /* Test with an encrypted value. Otherwise 'encryptionInformation' is not
      * appended. */
     {
-        // TODO(MONGOCRYPT-572): This test uses the QEv1 protocol. Update this test for QEv2 or remove. Note: decrypting
-        // QEv1 is still supported.
         mongocrypt_t *crypt = _mongocrypt_tester_mongocrypt(TESTER_MONGOCRYPT_DEFAULT);
         mongocrypt_ctx_t *ctx = mongocrypt_ctx_new(crypt);
 
