@@ -1434,9 +1434,6 @@ static void _test_encrypt_remote_encryptedfields(_mongocrypt_tester_t *tester) {
     ASSERT_OK(
         mongocrypt_setopt_kms_providers(crypt, TEST_BSON("{'aws': {'accessKeyId': 'foo', 'secretAccessKey': 'bar'}}")),
         crypt);
-    // TODO(MONGOCRYPT-572): This test uses the QEv1 protocol. Update this test for QEv2 or remove. Note: decrypting
-    // QEv1 is still supported.
-    ASSERT_OK(mongocrypt_setopt_fle2v2(crypt, false), crypt);
     ASSERT_OK(_mongocrypt_init_for_test(crypt), crypt);
     /* Test success. */
     {
@@ -1499,9 +1496,6 @@ static void _test_encrypt_remote_encryptedfields(_mongocrypt_tester_t *tester) {
             mongocrypt_setopt_kms_providers(crypt,
                                             TEST_BSON("{'aws': {'accessKeyId': 'foo', 'secretAccessKey': 'bar'}}")),
             crypt);
-        // TODO(MONGOCRYPT-572): This test uses the QEv1 protocol. Update this test for QEv2 or remove. Note: decrypting
-        // QEv1 is still supported.
-        ASSERT_OK(mongocrypt_setopt_fle2v2(crypt, false), crypt);
         ASSERT_OK(_mongocrypt_init_for_test(crypt), crypt);
         ctx = mongocrypt_ctx_new(crypt);
         ASSERT_OK(mongocrypt_ctx_encrypt_init(ctx, "db", -1, TEST_FILE("./test/data/fle2-find-explicit/cmd.json")),
