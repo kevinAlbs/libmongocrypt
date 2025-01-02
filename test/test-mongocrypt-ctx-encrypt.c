@@ -2960,7 +2960,7 @@ static void _test_encrypt_fle2_delete_v2(_mongocrypt_tester_t *tester) {
         mongocrypt_destroy(crypt);
     }
 
-    /* Test that deleteTokens are no appended when bypassQueryAnalysis is true in v2. */
+    /* Test that deleteTokens are not appended when bypassQueryAnalysis is true in v2. */
     {
         mongocrypt_t *crypt = mongocrypt_new();
         /* Configure crypt. */
@@ -2971,7 +2971,6 @@ static void _test_encrypt_fle2_delete_v2(_mongocrypt_tester_t *tester) {
             ASSERT_OK(mongocrypt_setopt_kms_provider_local(crypt, localkey), crypt);
             mongocrypt_binary_destroy(localkey);
             mongocrypt_setopt_bypass_query_analysis(crypt);
-            mongocrypt_setopt_fle2v2(crypt, true);
             ASSERT_OK(_mongocrypt_init_for_test(crypt), crypt);
         }
 
@@ -3014,7 +3013,6 @@ static void _test_encrypt_fle2_delete_v2(_mongocrypt_tester_t *tester) {
                                                                    TEST_FILE("./test/data/fle2-delete/success/"
                                                                              "encrypted-field-config-map.json")),
                       crypt);
-            mongocrypt_setopt_fle2v2(crypt, true);
             ASSERT_OK(_mongocrypt_init_for_test(crypt), crypt);
         }
 
@@ -3073,7 +3071,6 @@ static void _test_encrypt_fle2_delete_v2(_mongocrypt_tester_t *tester) {
                                                                              "encrypted-field-config-map.json")),
                       crypt);
             mongocrypt_setopt_bypass_query_analysis(crypt);
-            mongocrypt_setopt_fle2v2(crypt, true);
             ASSERT_OK(_mongocrypt_init_for_test(crypt), crypt);
         }
 
