@@ -1543,9 +1543,6 @@ static void _test_encrypt_with_bypassqueryanalysis(_mongocrypt_tester_t *tester)
             crypt);
         ASSERT_OK(mongocrypt_setopt_encrypted_field_config_map(crypt, TEST_BSON("{'db.coll': {'fields': []}}")), crypt);
         mongocrypt_setopt_bypass_query_analysis(crypt);
-        // TODO(MONGOCRYPT-572): This test uses the QEv1 protocol. Update this test for QEv2 or remove. Note: decrypting
-        // QEv1 is still supported.
-        ASSERT_OK(mongocrypt_setopt_fle2v2(crypt, false), crypt);
         ASSERT_OK(_mongocrypt_init_for_test(crypt), crypt);
 
         ctx = mongocrypt_ctx_new(crypt);
