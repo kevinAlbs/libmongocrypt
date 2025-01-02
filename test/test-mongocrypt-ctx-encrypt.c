@@ -2794,17 +2794,13 @@ static void _test_encrypt_applies_default_state_collections(_mongocrypt_tester_t
                                             TEST_BSON("{'aws': {'accessKeyId': 'foo', 'secretAccessKey': 'bar'}}")),
             crypt);
         ASSERT_OK(mongocrypt_setopt_encrypted_field_config_map(crypt, TEST_BSON("{'db.coll': {'fields': []}}")), crypt);
-        // TODO(MONGOCRYPT-572): This test uses the QEv1 protocol. Update this test for QEv2 or remove. Note: decrypting
-        // QEv1 is still supported.
-        ASSERT_OK(mongocrypt_setopt_fle2v2(crypt, false), crypt);
         ASSERT_OK(_mongocrypt_init_for_test(crypt), crypt);
         ctx = mongocrypt_ctx_new(crypt);
         ASSERT_OK(mongocrypt_ctx_encrypt_init(ctx, "db", -1, TEST_BSON("{'find': 'coll'}")), ctx);
         ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_MARKINGS);
         {
             const char *expect_schema = "{ 'fields': [], 'escCollection': "
-                                        "'enxcol_.coll.esc', 'eccCollection': "
-                                        "'enxcol_.coll.ecc', 'ecocCollection': "
+                                        "'enxcol_.coll.esc', 'ecocCollection': "
                                         "'enxcol_.coll.ecoc' }";
             mongocrypt_binary_t *cmd_to_mongocryptd;
 
