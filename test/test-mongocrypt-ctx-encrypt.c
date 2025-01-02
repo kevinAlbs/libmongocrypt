@@ -2336,7 +2336,6 @@ static void _test_encrypt_fle2_explicit(_mongocrypt_tester_t *tester) {
         tc.expect = TEST_BSON("{'v' : {'$binary' : {'base64': "
                               "'EKvN76sSNJh2EjQSNFZ4kBICTQaVZPWgXp41I7mPV1rLFVl3jjP90PgD4T+Mtubn/"
                               "mm4CKsKGaV1yxlic9Dty1Adef4Y+bsLGKhBbCa5eojM/A==','subType' : '06'}}}");
-        tc.use_v2 = true;
         ee_testcase_run(&tc);
     }
 
@@ -2357,7 +2356,6 @@ static void _test_encrypt_fle2_explicit(_mongocrypt_tester_t *tester) {
         tc.keys_to_feed[0] = keyABC;
         tc.keys_to_feed[1] = key123;
         tc.expect = TEST_FILE("./test/data/fle2-explicit/insert-indexed-v2.json");
-        tc.use_v2 = true;
         ee_testcase_run(&tc);
     }
 
@@ -2383,7 +2381,6 @@ static void _test_encrypt_fle2_explicit(_mongocrypt_tester_t *tester) {
         tc.keys_to_feed[0] = keyABC;
         tc.keys_to_feed[1] = key123;
         tc.expect = TEST_FILE("./test/data/fle2-explicit/insert-indexed-v2.json");
-        tc.use_v2 = true;
         ee_testcase_run(&tc);
     }
 
@@ -2410,7 +2407,6 @@ static void _test_encrypt_fle2_explicit(_mongocrypt_tester_t *tester) {
         tc.keys_to_feed[1] = key123;
         tc.expect = TEST_FILE("./test/data/fle2-explicit/"
                               "insert-indexed-contentionFactor1-v2.json");
-        tc.use_v2 = true;
         ee_testcase_run(&tc);
     }
 
@@ -2430,7 +2426,6 @@ static void _test_encrypt_fle2_explicit(_mongocrypt_tester_t *tester) {
         tc.keys_to_feed[0] = keyABC;
         tc.expect = TEST_FILE("./test/data/fle2-explicit/"
                               "insert-indexed-same-user-and-index-key-v2.json");
-        tc.use_v2 = true;
         ee_testcase_run(&tc);
     }
 
@@ -2446,7 +2441,6 @@ static void _test_encrypt_fle2_explicit(_mongocrypt_tester_t *tester) {
         tc.keys_to_feed[0] = keyABC;
         tc.keys_to_feed[1] = key123;
         tc.expect = TEST_FILE("./test/data/fle2-explicit/find-indexed-v2.json");
-        tc.use_v2 = true;
         ee_testcase_run(&tc);
     }
 
@@ -2462,7 +2456,6 @@ static void _test_encrypt_fle2_explicit(_mongocrypt_tester_t *tester) {
         tc.keys_to_feed[0] = keyABC;
         tc.keys_to_feed[1] = key123;
         tc.expect = TEST_FILE("./test/data/fle2-explicit/find-indexed-contentionFactor1-v2.json");
-        tc.use_v2 = true;
         ee_testcase_run(&tc);
     }
 
@@ -2474,7 +2467,6 @@ static void _test_encrypt_fle2_explicit(_mongocrypt_tester_t *tester) {
         tc.contention_factor = OPT_I64(-1);
         tc.msg = TEST_BSON("{'v': 123456}");
         tc.expect_init_error = "contention must be non-negative";
-        tc.use_v2 = true;
         ee_testcase_run(&tc);
     }
 
@@ -2486,7 +2478,6 @@ static void _test_encrypt_fle2_explicit(_mongocrypt_tester_t *tester) {
         tc.contention_factor = OPT_I64(INT64_MAX);
         tc.msg = TEST_BSON("{'v': 123456}");
         tc.expect_init_error = "contention must be < INT64_MAX";
-        tc.use_v2 = true;
         ee_testcase_run(&tc);
     }
 
@@ -2508,7 +2499,6 @@ static void _test_encrypt_fle2_explicit(_mongocrypt_tester_t *tester) {
         tc.keys_to_feed[1] = key123;
         tc.expect = TEST_FILE("./test/data/fle2-insert-range-explicit/int32/"
                               "encrypted-payload-v2.json");
-        tc.use_v2 = true;
         ee_testcase_run(&tc);
     }
 
@@ -2530,7 +2520,6 @@ static void _test_encrypt_fle2_explicit(_mongocrypt_tester_t *tester) {
         tc.keys_to_feed[1] = key123;
         tc.expect = TEST_FILE("./test/data/fle2-insert-range-explicit/sparsity-2/"
                               "encrypted-payload-v2.json");
-        tc.use_v2 = true;
         ee_testcase_run(&tc);
     }
 
@@ -2550,7 +2539,6 @@ static void _test_encrypt_fle2_explicit(_mongocrypt_tester_t *tester) {
         tc.expect = TEST_FILE("./test/data/fle2-find-range-explicit/int32/"
                               "encrypted-payload-v2.json");
         tc.is_expression = true;
-        tc.use_v2 = true;
         ee_testcase_run(&tc);
     }
 
@@ -2564,7 +2552,6 @@ static void _test_encrypt_fle2_explicit(_mongocrypt_tester_t *tester) {
         tc.msg = TEST_BSON("{'v': 'abc'}");
         tc.keys_to_feed[0] = keyABC;
         tc.expect_finalize_error = "expected matching 'min' and value type";
-        tc.use_v2 = true;
         ee_testcase_run(&tc);
     }
 
@@ -2586,7 +2573,6 @@ static void _test_encrypt_fle2_explicit(_mongocrypt_tester_t *tester) {
         tc.expect = TEST_FILE("./test/data/fle2-find-range-explicit/"
                               "double-precision/encrypted-payload-v2.json");
         tc.is_expression = true;
-        tc.use_v2 = true;
         ee_testcase_run(&tc);
     }
 
@@ -2608,7 +2594,6 @@ static void _test_encrypt_fle2_explicit(_mongocrypt_tester_t *tester) {
         tc.keys_to_feed[1] = key123;
         tc.expect = TEST_FILE("./test/data/fle2-insert-range-explicit/double-precision/"
                               "encrypted-payload-v2.json");
-        tc.use_v2 = true;
         ee_testcase_run(&tc);
     }
 
@@ -2628,7 +2613,6 @@ static void _test_encrypt_fle2_explicit(_mongocrypt_tester_t *tester) {
         tc.keys_to_feed[1] = key123;
         tc.expect = TEST_FILE("./test/data/fle2-find-range-explicit/double/encrypted-payload-v2.json");
         tc.is_expression = true;
-        tc.use_v2 = true;
         ee_testcase_run(&tc);
     }
 
@@ -2649,7 +2633,6 @@ static void _test_encrypt_fle2_explicit(_mongocrypt_tester_t *tester) {
         tc.keys_to_feed[1] = key123;
         tc.expect = TEST_FILE("./test/data/fle2-insert-range-explicit/double/"
                               "encrypted-payload-v2.json");
-        tc.use_v2 = true;
         ee_testcase_run(&tc);
     }
 
@@ -2663,7 +2646,6 @@ static void _test_encrypt_fle2_explicit(_mongocrypt_tester_t *tester) {
         tc.msg = TEST_FILE("./test/data/fle2-insert-range-explicit/int32/value-to-encrypt.json");
         tc.keys_to_feed[0] = keyABC;
         tc.expect_finalize_error = "minimum value must be less than the maximum value";
-        tc.use_v2 = true;
         ee_testcase_run(&tc);
     }
 
@@ -2697,7 +2679,6 @@ static void _test_encrypt_fle2_explicit(_mongocrypt_tester_t *tester) {
         tc.expect = TEST_FILE("./test/data/fle2-find-range-explicit/"
                               "int32-openinterval/encrypted-payload-v2.json");
         tc.is_expression = true;
-        tc.use_v2 = true;
         ee_testcase_run(&tc);
     }
 
@@ -4636,7 +4617,6 @@ static void _test_range_sends_cryptoParams(_mongocrypt_tester_t *tester) {
         tc.msg = TEST_BSON("{'v': 123456}");
         tc.keys_to_feed[0] = key123;
         tc.expect = TEST_FILE("./test/data/range-sends-cryptoParams/explicit-insert-int32/expected.json");
-        tc.use_v2 = true;       // Use QEv2 protocol.
         tc.use_range_v2 = true; // Use RangeV2 protocol.
         ee_testcase_run(&tc);
         // Check the parameters are present in the final payload.
@@ -4662,7 +4642,6 @@ static void _test_range_sends_cryptoParams(_mongocrypt_tester_t *tester) {
         tc.msg = TEST_BSON("{'v': 123456}");
         tc.keys_to_feed[0] = key123;
         tc.expect = TEST_FILE("./test/data/range-sends-cryptoParams/explicit-insert-int32-defaults/expected.json");
-        tc.use_v2 = true;       // Use QEv2 protocol.
         tc.use_range_v2 = true; // Use RangeV2 protocol.
         ee_testcase_run(&tc);
         // Check the parameters are present in the final payload.
@@ -4689,7 +4668,6 @@ static void _test_range_sends_cryptoParams(_mongocrypt_tester_t *tester) {
         tc.msg = TEST_BSON("{'v': 123456.0}");
         tc.keys_to_feed[0] = key123;
         tc.expect = TEST_FILE("./test/data/range-sends-cryptoParams/explicit-insert-double/expected.json");
-        tc.use_v2 = true;       // Use QEv2 protocol.
         tc.use_range_v2 = true; // Use RangeV2 protocol.
         ee_testcase_run(&tc);
         // Check the parameters are present in the final payload.
@@ -4715,7 +4693,6 @@ static void _test_range_sends_cryptoParams(_mongocrypt_tester_t *tester) {
         tc.msg = TEST_FILE("./test/data/range-sends-cryptoParams/explicit-find-int32-defaults/to-encrypt.json");
         tc.keys_to_feed[0] = key123;
         tc.expect = TEST_FILE("./test/data/range-sends-cryptoParams/explicit-find-int32-defaults/expected.json");
-        tc.use_v2 = true;       // Use QEv2 protocol.
         tc.use_range_v2 = true; // Use RangeV2 protocol.
         ee_testcase_run(&tc);
         // Check the parameters are present in the final payload.
@@ -4741,7 +4718,6 @@ static void _test_range_sends_cryptoParams(_mongocrypt_tester_t *tester) {
         tc.msg = TEST_FILE("./test/data/range-sends-cryptoParams/explicit-find-int32/to-encrypt.json");
         tc.keys_to_feed[0] = key123;
         tc.expect = TEST_FILE("./test/data/range-sends-cryptoParams/explicit-find-int32/expected.json");
-        tc.use_v2 = true;       // Use QEv2 protocol.
         tc.use_range_v2 = true; // Use RangeV2 protocol.
         ee_testcase_run(&tc);
         // Check the parameters are present in the final payload.
