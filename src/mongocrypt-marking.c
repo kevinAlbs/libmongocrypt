@@ -588,7 +588,6 @@ static bool _mongocrypt_fle2_placeholder_to_insert_update_common(_mongocrypt_key
     BSON_ASSERT_PARAM(placeholder);
     BSON_ASSERT_PARAM(value_iter);
     BSON_ASSERT(kb->crypt);
-    BSON_ASSERT(kb->crypt->opts.use_fle2_v2 == true);
     BSON_ASSERT(placeholder->type == MONGOCRYPT_FLE2_PLACEHOLDER_TYPE_INSERT);
 
     _mongocrypt_crypto_t *crypto = kb->crypt->crypto;
@@ -1335,25 +1334,14 @@ static bool _mongocrypt_fle2_placeholder_to_FLE2UnindexedEncryptedValue(_mongocr
     }
 
     BSON_ASSERT(kb->crypt);
-    if (kb->crypt->opts.use_fle2_v2) {
-        res = mc_FLE2UnindexedEncryptedValueV2_encrypt(kb->crypt->crypto,
-                                                       &placeholder->user_key_id,
-                                                       bson_iter_type(&placeholder->v_iter),
-                                                       &plaintext,
-                                                       &user_key,
-                                                       &ciphertext->data,
-                                                       status);
-        ciphertext->blob_subtype = MC_SUBTYPE_FLE2UnindexedEncryptedValueV2;
-    } else {
-        res = mc_FLE2UnindexedEncryptedValue_encrypt(kb->crypt->crypto,
-                                                     &placeholder->user_key_id,
-                                                     bson_iter_type(&placeholder->v_iter),
-                                                     &plaintext,
-                                                     &user_key,
-                                                     &ciphertext->data,
-                                                     status);
-        ciphertext->blob_subtype = MC_SUBTYPE_FLE2UnindexedEncryptedValue;
-    }
+    res = mc_FLE2UnindexedEncryptedValueV2_encrypt(kb->crypt->crypto,
+                                                   &placeholder->user_key_id,
+                                                   bson_iter_type(&placeholder->v_iter),
+                                                   &plaintext,
+                                                   &user_key,
+                                                   &ciphertext->data,
+                                                   status);
+    ciphertext->blob_subtype = MC_SUBTYPE_FLE2UnindexedEncryptedValueV2;
 
     if (!res) {
         goto fail;
