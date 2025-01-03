@@ -27,8 +27,7 @@
 #include "mongocrypt.h"
 
 /* _fle2_append_encryptedFieldConfig copies encryptedFieldConfig and applies
- * default state collection names for escCollection, eccCollection, and
- * ecocCollection if required. */
+ * default state collection names for escCollection, and ecocCollection if required. */
 static bool _fle2_append_encryptedFieldConfig(const mongocrypt_ctx_t *ctx,
                                               bson_t *dst,
                                               bson_t *encryptedFieldConfig,
