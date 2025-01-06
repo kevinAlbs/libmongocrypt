@@ -141,6 +141,10 @@ static inline bool mc_scheme_broker_need_more_schemas(mc_schema_broker_t *sb) {
     return false;
 }
 
+static inline const mc_EncryptedFieldConfig_t *mc_schema_broker_get_efc(mc_schema_broker_t *sb, size_t idx) {
+    return NULL;
+}
+
 static inline void mc_schema_broker_destroy(mc_schema_broker_t *sb) {
     return;
 }
