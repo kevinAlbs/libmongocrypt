@@ -33,10 +33,13 @@ static inline mc_schema_broker_t *mc_schema_broker_new(void) {
 }
 
 // mc_schema_broker_request adds a namespace to request a schema. Ignores duplicates.
-static inline void mc_schema_broker_request(mc_schema_broker_t *sb, const char *db, const char *coll) {
+// Returns error if two requests have different databases.
+static inline bool
+mc_schema_broker_request(mc_schema_broker_t *sb, const char *db, const char *coll, mongocrypt_status_t *status) {
     BSON_ASSERT_PARAM(sb);
     BSON_ASSERT_PARAM(db);
     BSON_ASSERT_PARAM(coll);
+    return false;
 }
 
 static inline bool mc_schema_broker_has_any_csfle_schemas(const mc_schema_broker_t *sb) {

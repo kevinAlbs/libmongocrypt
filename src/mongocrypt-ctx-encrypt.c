@@ -3522,7 +3522,9 @@ static bool find_collections_in_pipeline(bson_iter_t pipeline_iter,
                     }
                     char *from = bson_strdup(bson_iter_utf8(&lookup_iter, NULL));
 
-                    mc_schema_broker_request(sb, db, from);
+                    if (!mc_schema_broker_request(sb, db, from, status)) {
+                        return false;
+                    }
 
                     bool is_duplicate = false;
                     // Check for duplicates.
@@ -3711,7 +3713,9 @@ bool mongocrypt_ctx_encrypt_init(mongocrypt_ctx_t *ctx, const char *db, int32_t 
         }
 
         ectx->target_ns = bson_strdup_printf("%s.%s", ectx->target_db, ectx->target_coll);
-        mc_schema_broker_request(ectx->sb, ectx->target_db, ectx->target_coll);
+        if (!mc_schema_broker_request(ectx->sb, ectx->target_db, ectx->target_coll, ctx->status)) {
+            return _mongocrypt_ctx_fail(ctx);
+        }
     } else {
         bool bypass;
         if (!_check_cmd_for_auto_encrypt(cmd, &bypass, &ectx->target_coll, ctx->status)) {
@@ -3730,7 +3734,9 @@ bool mongocrypt_ctx_encrypt_init(mongocrypt_ctx_t *ctx, const char *db, int32_t 
             return _mongocrypt_ctx_fail_w_msg(ctx, "unexpected error: did not bypass or error but no collection name");
         }
         ectx->target_ns = bson_strdup_printf("%s.%s", ectx->cmd_db, ectx->target_coll);
-        mc_schema_broker_request(ectx->sb, ectx->cmd_db, ectx->target_coll);
+        if (!mc_schema_broker_request(ectx->sb, ectx->cmd_db, ectx->target_coll, ctx->status)) {
+            return _mongocrypt_ctx_fail(ctx);
+        }
     }
 
     if (0 == strcmp(ectx->cmd_name, "aggregate")) {
