@@ -474,6 +474,7 @@ set (TEST_MONGOCRYPT_SOURCES
    test/test-mc-range-mincover.c
    test/test-mc-rangeopts.c
    test/test-mc-reader.c
+   test/test-mc-schema-broker.c
    test/test-mc-tokens.c
    test/test-mc-range-encoding.c
    test/test-mc-writer.c

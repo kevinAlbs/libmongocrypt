@@ -218,6 +218,8 @@ void _mongocrypt_tester_install_named_kms_providers(_mongocrypt_tester_t *tester
 
 void _mongocrypt_tester_install_mc_cmp(_mongocrypt_tester_t *tester);
 
+void _mongocrypt_tester_install_mc_schema_broker(_mongocrypt_tester_t *tester);
+
 /* Conveniences for getting test data. */
 
 /* Get a temporary bson_t from a JSON string. Do not free it. */
