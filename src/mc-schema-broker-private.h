@@ -23,9 +23,19 @@
 #include "mongocrypt-status-private.h"
 #include <bson/bson.h>
 
+// To be moved to mc-schema-broker.c ... begin
+typedef struct mc_schema_entry_t {
+    char *coll;
+    struct mc_schema_entry_t *next;
+} mc_schema_entry_t;
+
+// To be moved to mc-schema-broker.c ... end
+
 // mc_schema_broker_t stores schemas for an auto encryption operation.
 typedef struct {
-    int placeholder;
+    char *db; // Database shared by all schemas.
+    mc_schema_entry_t *ll;
+    size_t ll_len;
 } mc_schema_broker_t;
 
 static inline mc_schema_broker_t *mc_schema_broker_new(void) {
@@ -39,7 +49,44 @@ mc_schema_broker_request(mc_schema_broker_t *sb, const char *db, const char *col
     BSON_ASSERT_PARAM(sb);
     BSON_ASSERT_PARAM(db);
     BSON_ASSERT_PARAM(coll);
-    return false;
+
+    if (sb->db && 0 != strcmp(sb->db, db)) {
+        CLIENT_ERR("Cannot request schemas for different databases. Requested schemas for '%s' and '%s'.", sb->db, db);
+        return false;
+    }
+
+    // Check for duplicates. Keep pointer to last node.
+    mc_schema_entry_t *last = NULL;
+    for (mc_schema_entry_t *it = sb->ll; it != NULL; it = it->next) {
+        if (0 == strcmp(it->coll, coll)) {
+            return true;
+        }
+        last = it;
+    }
+
+    mc_schema_entry_t *se = bson_malloc0(sizeof *se);
+    se->coll = bson_strdup(coll);
+    if (NULL == last) {
+        sb->ll = se;
+        sb->db = bson_strdup(db);
+    } else {
+        last->next = se;
+    }
+    sb->ll_len++;
+    return true;
+}
+
+static inline void mc_schema_broker_destroy(mc_schema_broker_t *sb) {
+    mc_schema_entry_t *it = sb->ll;
+    while (it != NULL) {
+        bson_free(it->coll);
+        mc_schema_entry_t *tmp = it->next;
+        bson_free(it);
+        it = tmp;
+    }
+    bson_free(sb->db);
+    bson_free(sb);
+    return;
 }
 
 static inline bool mc_schema_broker_has_any_csfle_schemas(const mc_schema_broker_t *sb) {
@@ -61,8 +108,28 @@ static inline bool
 mc_schema_broker_append_listCollections_filter(const mc_schema_broker_t *sb, bson_t *out, mongocrypt_status_t *status) {
     BSON_ASSERT_PARAM(sb);
     BSON_ASSERT_PARAM(out);
-    CLIENT_ERR("mc_schema_broker_append_listCollections_filter is not yet implemented");
-    return false;
+
+    if (sb->ll_len == 0) {
+        CLIENT_ERR("Unexpected: attempting to create listCollections filter but no schemas requested");
+        return false;
+    } else if (sb->ll_len == 1) {
+        // One request. Append as: { "name": <name> }
+        BCON_APPEND(out, "name", BCON_UTF8(sb->ll->coll));
+        return true;
+    } else {
+        // Multiple requests. Append as: { "name": { "$in": [ <name1>, <name2>, ... ] } }
+        bson_t in;
+        BSON_ASSERT(BSON_APPEND_DOCUMENT_BEGIN(out, "name", &in));
+        bson_array_builder_t *bab;
+        BSON_ASSERT(BSON_APPEND_ARRAY_BUILDER_BEGIN(&in, "$in", &bab));
+        for (mc_schema_entry_t *se = sb->ll; se != NULL; se = se->next) {
+            BSON_ASSERT(bson_array_builder_append_utf8(bab, se->coll, -1));
+            // TODO: do not request schemas that are already satisfied.
+        }
+        BSON_ASSERT(bson_append_array_builder_end(&in, bab));
+        BSON_ASSERT(bson_append_document_end(out, &in));
+    }
+    return true;
 }
 
 static inline bool
@@ -146,10 +213,6 @@ static inline bool mc_scheme_broker_need_more_schemas(mc_schema_broker_t *sb) {
 
 static inline const mc_EncryptedFieldConfig_t *mc_schema_broker_get_efc(mc_schema_broker_t *sb, size_t idx) {
     return NULL;
-}
-
-static inline void mc_schema_broker_destroy(mc_schema_broker_t *sb) {
-    return;
 }
 
 #endif // MC_SCHEMA_BROKER_PRIVATE_H

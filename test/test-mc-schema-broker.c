@@ -26,9 +26,9 @@ static void test_mc_schema_broker_request(_mongocrypt_tester_t *tester) {
         ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "coll", status), status);
 
         // Check listCollections filter:
-        bson_t filter;
+        bson_t filter = BSON_INITIALIZER;
         ASSERT_OK_STATUS(mc_schema_broker_append_listCollections_filter(sb, &filter, status), status);
-        ASSERT_EQUAL_BSON(TMP_BSON(BSON_STR({"foo" : "bar"})), &filter);
+        ASSERT_EQUAL_BSON(TMP_BSON(BSON_STR({"name" : "coll"})), &filter);
         bson_destroy(&filter);
 
         mc_schema_broker_destroy(sb);
@@ -43,9 +43,9 @@ static void test_mc_schema_broker_request(_mongocrypt_tester_t *tester) {
         ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "coll2", status), status);
 
         // Check listCollections filter:
-        bson_t filter;
+        bson_t filter = BSON_INITIALIZER;
         ASSERT_OK_STATUS(mc_schema_broker_append_listCollections_filter(sb, &filter, status), status);
-        ASSERT_EQUAL_BSON(TMP_BSON(BSON_STR({"foo" : "bar"})), &filter);
+        ASSERT_EQUAL_BSON(TMP_BSON(BSON_STR({"name" : {"$in" : [ "coll1", "coll2" ]}})), &filter);
         bson_destroy(&filter);
 
         mc_schema_broker_destroy(sb);
@@ -57,12 +57,12 @@ static void test_mc_schema_broker_request(_mongocrypt_tester_t *tester) {
         mongocrypt_status_t *status = mongocrypt_status_new();
         mc_schema_broker_t *sb = mc_schema_broker_new();
         ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "coll1", status), status);
-        ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "coll2", status), status);
+        ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "coll1", status), status);
 
         // Check listCollections filter:
-        bson_t filter;
+        bson_t filter = BSON_INITIALIZER;
         ASSERT_OK_STATUS(mc_schema_broker_append_listCollections_filter(sb, &filter, status), status);
-        ASSERT_EQUAL_BSON(TMP_BSON(BSON_STR({"foo" : "bar"})), &filter);
+        ASSERT_EQUAL_BSON(TMP_BSON(BSON_STR({"name" : "coll1"})), &filter);
         bson_destroy(&filter);
 
         mc_schema_broker_destroy(sb);
