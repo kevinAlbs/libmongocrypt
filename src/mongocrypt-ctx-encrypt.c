@@ -622,7 +622,7 @@ static bool _set_schema_from_collinfo(mongocrypt_ctx_t *ctx, const char *ns, bso
     /* Parse out the schema. */
     ectx = (_mongocrypt_ctx_encrypt_t *)ctx;
 
-    if (!mc_schema_broker_satisfy_from_collinfo(ectx->sb, ns, collinfo, ctx->status)) {
+    if (!mc_schema_broker_satisfy_from_collinfo(ectx->sb, collinfo, ctx->status)) {
         return _mongocrypt_ctx_fail(ctx);
     }
 
