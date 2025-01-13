@@ -84,7 +84,7 @@ static void test_mc_schema_broker_request(_mongocrypt_tester_t *tester) {
 }
 
 static void test_mc_schema_broker_satisfy_from_collInfo(_mongocrypt_tester_t *tester) {
-    mongocrypt_binary_t *collinfo = TEST_FILE_AS_BSON("./test/data/schema-broker/collinfo-jsonSchema.json");
+    bson_t *collinfo = TEST_FILE_AS_BSON("./test/data/schema-broker/collinfo-jsonSchema.json");
 
     // Can satisfy.
     {
