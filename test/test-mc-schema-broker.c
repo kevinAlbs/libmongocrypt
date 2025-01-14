@@ -158,6 +158,20 @@ static void test_mc_schema_broker_satisfy_from_collInfo(_mongocrypt_tester_t *te
         mc_schema_broker_destroy(sb);
         mongocrypt_status_destroy(status);
     }
+
+    // Errors if attempting to satisfy with an empty document.
+    {
+        mongocrypt_status_t *status = mongocrypt_status_new();
+        mc_schema_broker_t *sb = mc_schema_broker_new();
+
+        ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "coll", status), status);
+        ASSERT_FAILS_STATUS(mc_schema_broker_satisfy_from_collinfo(sb, TMP_BSON("{}"), status),
+                            status,
+                            "failed to find 'name'");
+
+        mc_schema_broker_destroy(sb);
+        mongocrypt_status_destroy(status);
+    }
 }
 
 static void test_mc_schema_broker_satisfy_from_cache(_mongocrypt_tester_t *tester) {
