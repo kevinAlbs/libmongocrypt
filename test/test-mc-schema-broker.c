@@ -219,6 +219,52 @@ static void test_mc_schema_broker_satisfy_from_cache(_mongocrypt_tester_t *teste
     }
 }
 
+static void test_mc_schema_broker_satisfy_from_schemaMap(_mongocrypt_tester_t *tester) {
+    bson_t *schemaMap = TEST_FILE_AS_BSON("./test/data/schema-broker/schemaMap.json");
+
+    // Can satisfy.
+    {
+        mongocrypt_status_t *status = mongocrypt_status_new();
+        mc_schema_broker_t *sb = mc_schema_broker_new();
+
+        ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "coll", status), status);
+        ASSERT(mc_scheme_broker_need_more_schemas(sb));
+        ASSERT_OK_STATUS(mc_schema_broker_satisfy_from_schemaMap(sb, schemaMap, status), status);
+        ASSERT(!mc_scheme_broker_need_more_schemas(sb));
+
+        mc_schema_broker_destroy(sb);
+        mongocrypt_status_destroy(status);
+    }
+
+    // Does not satisfy with non-matching entry.
+    {
+        mongocrypt_status_t *status = mongocrypt_status_new();
+        mc_schema_broker_t *sb = mc_schema_broker_new();
+
+        ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "coll", status), status);
+        ASSERT(mc_scheme_broker_need_more_schemas(sb));
+        ASSERT_OK_STATUS(mc_schema_broker_satisfy_from_schemaMap(sb, TMP_BSON("{'db.foo': {}}"), status), status);
+        ASSERT(mc_scheme_broker_need_more_schemas(sb)); // Still not satisfied.
+
+        mc_schema_broker_destroy(sb);
+        mongocrypt_status_destroy(status);
+    }
+
+    // Can satisfy with empty entry.
+    {
+        mongocrypt_status_t *status = mongocrypt_status_new();
+        mc_schema_broker_t *sb = mc_schema_broker_new();
+
+        ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "coll", status), status);
+        ASSERT(mc_scheme_broker_need_more_schemas(sb));
+        ASSERT_OK_STATUS(mc_schema_broker_satisfy_from_schemaMap(sb, TMP_BSON("{'db.coll': {}}"), status), status);
+        ASSERT(!mc_scheme_broker_need_more_schemas(sb));
+
+        mc_schema_broker_destroy(sb);
+        mongocrypt_status_destroy(status);
+    }
+}
+
 void _mongocrypt_tester_install_mc_schema_broker(_mongocrypt_tester_t *tester) {
     INSTALL_TEST(test_mc_schema_broker_request);
     INSTALL_TEST(test_mc_schema_broker_satisfy_from_collInfo);
