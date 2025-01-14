@@ -151,6 +151,88 @@ mc_schema_broker_append_encryptionInformation(const mc_schema_broker_t *sb, bson
     return false;
 }
 
+static inline bool mc_schema_entry_satisfy_from_collinfo(mc_schema_entry_t *se,
+                                                         const bson_t *collinfo,
+                                                         const char *coll,
+                                                         const char *db,
+                                                         mongocrypt_status_t *status) {
+    BSON_ASSERT_PARAM(se);
+    BSON_ASSERT_PARAM(collinfo);
+    BSON_ASSERT_PARAM(db);
+    BSON_ASSERT(!se->satisfied);
+
+    bson_iter_t collinfo_iter;
+
+    if (!bson_iter_init(&collinfo_iter, collinfo)) {
+        CLIENT_ERR("failed to iterate collinfo for collection: %s.%s", db, coll);
+        return false;
+    }
+
+    // Disallow views.
+    bson_iter_t type_iter = collinfo_iter;
+    if (bson_iter_find(&type_iter, "type") && BSON_ITER_HOLDS_UTF8(&type_iter) && bson_iter_utf8(&type_iter, NULL)
+        && 0 == strcmp("view", bson_iter_utf8(&type_iter, NULL))) {
+        CLIENT_ERR("cannot auto encrypt view: %s.%s", db, coll);
+        return false;
+    }
+
+    // Check if collection is configured for QE.
+    bson_iter_t encryptedFields_iter = collinfo_iter;
+    if (bson_iter_find_descendant(&encryptedFields_iter, "options.encryptedFields", &encryptedFields_iter)) {
+        if (!BSON_ITER_HOLDS_DOCUMENT(&encryptedFields_iter)) {
+            CLIENT_ERR("expected document for `options.encryptedFields` but got %s for collection %s.%s",
+                       mc_bson_type_to_string(bson_iter_type(&encryptedFields_iter)),
+                       db,
+                       coll);
+            return false;
+        }
+        if (!_mongocrypt_buffer_copy_from_document_iter(&se->encryptedFields_buf, &encryptedFields_iter)) {
+            CLIENT_ERR("failed to copy `options.encryptedFields` for collection: %s.%s", db, coll);
+            return false;
+        }
+        bson_t encryptedFields_bson;
+        if (!_mongocrypt_buffer_to_bson(&se->encryptedFields_buf, &encryptedFields_bson)) {
+            CLIENT_ERR("unable to create BSON from `options.encryptedFields` for collection: %s.%s", db, coll);
+            return false;
+        }
+
+        if (!mc_EncryptedFieldConfig_parse(&se->encryptedFields, &encryptedFields_bson, status, true /* range v2 */)) {
+            return false;
+        }
+    }
+
+    // Check if collection is configured for CSFLE.
+    bool found_jsonSchema = false;
+    bson_iter_t validator_iter = collinfo_iter;
+    if (bson_iter_find_descendant(&validator_iter, "options.validator", &validator_iter)
+        && BSON_ITER_HOLDS_DOCUMENT(&validator_iter)) {
+        if (!bson_iter_recurse(&validator_iter, &validator_iter)) {
+            CLIENT_ERR("failed to iterate `options.validator` for collection: %s.%s", db, coll);
+            return false;
+        }
+        while (bson_iter_next(&validator_iter)) {
+            const char *key = bson_iter_key(&validator_iter);
+            if (0 == strcmp("$jsonSchema", key)) {
+                if (found_jsonSchema) {
+                    CLIENT_ERR("duplicate `$jsonSchema` fields found for collection: %s.%s", db, coll);
+                    return false;
+                }
+
+                if (!_mongocrypt_buffer_copy_from_document_iter(&se->jsonSchema_buf, &validator_iter)) {
+                    CLIENT_ERR("unable to copy `$jsonSchema` for collection: %s.%s", db, coll);
+                    return false;
+                }
+                found_jsonSchema = true;
+            } else {
+                se->jsonSchema_has_siblings = true;
+            }
+        }
+    }
+
+    se->satisfied = true;
+    return true;
+}
+
 static inline bool
 mc_schema_broker_satisfy_from_collinfo(mc_schema_broker_t *sb, const bson_t *collinfo, mongocrypt_status_t *status) {
     BSON_ASSERT_PARAM(sb);
@@ -194,68 +276,10 @@ mc_schema_broker_satisfy_from_collinfo(mc_schema_broker_t *sb, const bson_t *col
         return false;
     }
 
-    // Disallow views.
-    bson_iter_t type_iter = collinfo_iter;
-    if (bson_iter_find(&type_iter, "type") && BSON_ITER_HOLDS_UTF8(&type_iter) && bson_iter_utf8(&type_iter, NULL)
-        && 0 == strcmp("view", bson_iter_utf8(&type_iter, NULL))) {
-        CLIENT_ERR("cannot auto encrypt view: %s.%s", sb->db, coll);
+    if (!mc_schema_entry_satisfy_from_collinfo(se, collinfo, coll, sb->db, status)) {
         return false;
     }
 
-    // Check if collection is configured for QE.
-    bson_iter_t encryptedFields_iter = collinfo_iter;
-    if (bson_iter_find_descendant(&encryptedFields_iter, "options.encryptedFields", &encryptedFields_iter)) {
-        if (!BSON_ITER_HOLDS_DOCUMENT(&encryptedFields_iter)) {
-            CLIENT_ERR("expected document for `options.encryptedFields` but got %s for collection %s.%s",
-                       mc_bson_type_to_string(bson_iter_type(&encryptedFields_iter)),
-                       sb->db,
-                       coll);
-            return false;
-        }
-        if (!_mongocrypt_buffer_copy_from_document_iter(&se->encryptedFields_buf, &encryptedFields_iter)) {
-            CLIENT_ERR("failed to copy `options.encryptedFields` for collection: %s.%s", sb->db, coll);
-            return false;
-        }
-        bson_t encryptedFields_bson;
-        if (!_mongocrypt_buffer_to_bson(&se->encryptedFields_buf, &encryptedFields_bson)) {
-            CLIENT_ERR("unable to create BSON from `options.encryptedFields` for collection: %s.%s", sb->db, coll);
-            return false;
-        }
-
-        if (!mc_EncryptedFieldConfig_parse(&se->encryptedFields, &encryptedFields_bson, status, true /* range v2 */)) {
-            return false;
-        }
-    }
-
-    // Check if collection is configured for CSFLE.
-    bool found_jsonSchema = false;
-    bson_iter_t validator_iter = collinfo_iter;
-    if (bson_iter_find_descendant(&validator_iter, "options.validator", &validator_iter)
-        && BSON_ITER_HOLDS_DOCUMENT(&validator_iter)) {
-        if (!bson_iter_recurse(&validator_iter, &validator_iter)) {
-            CLIENT_ERR("failed to iterate `options.validator` for collection: %s.%s", sb->db, coll);
-            return false;
-        }
-        while (bson_iter_next(&validator_iter)) {
-            const char *key = bson_iter_key(&validator_iter);
-            if (0 == strcmp("$jsonSchema", key)) {
-                if (found_jsonSchema) {
-                    CLIENT_ERR("duplicate `$jsonSchema` fields found for collection: %s.%s", sb->db, coll);
-                    return false;
-                }
-
-                if (!_mongocrypt_buffer_copy_from_document_iter(&se->jsonSchema_buf, &validator_iter)) {
-                    CLIENT_ERR("unable to copy `$jsonSchema` for collection: %s.%s", sb->db, coll);
-                    return false;
-                }
-                found_jsonSchema = true;
-            } else {
-                se->jsonSchema_has_siblings = true;
-            }
-        }
-    }
-
-    se->satisfied = true;
     return true;
 }
 
@@ -277,16 +301,44 @@ static inline bool mc_schema_broker_satisfy_from_encryptedFieldsMap(mc_schema_br
 }
 
 static inline bool mc_schema_broker_satisfy_from_cache(mc_schema_broker_t *sb,
-                                                       const _mongocrypt_cache_t *listCollections_cache,
+                                                       _mongocrypt_cache_t *listCollections_cache,
                                                        mongocrypt_status_t *status) {
     BSON_ASSERT_PARAM(sb);
     BSON_ASSERT_PARAM(listCollections_cache);
-    CLIENT_ERR("mc_schema_broker_satisfy_from_cache is not yet implemented");
-    return false;
+
+    for (mc_schema_entry_t *it = sb->ll; it != NULL; it = it->next) {
+        if (it->satisfied) {
+            continue;
+        }
+        char *ns = bson_strdup_printf("%s.%s", sb->db, it->coll);
+
+        // Check if there is a listCollections result cached.
+        bool loop_ok = false;
+        bson_t *collinfo = NULL;
+        if (!_mongocrypt_cache_get(listCollections_cache, ns, (void **)&collinfo)) {
+            CLIENT_ERR("failed to retrieve from listCollections cache for entry: %s", ns);
+            goto loop_fail;
+        }
+
+        if (!mc_schema_entry_satisfy_from_collinfo(it, collinfo, sb->db, it->coll, status)) {
+            bson_destroy(collinfo);
+            bson_free(ns);
+            goto loop_fail;
+        }
+
+        loop_ok = true;
+    loop_fail:
+        bson_destroy(collinfo);
+        bson_free(ns);
+        if (!loop_ok) {
+            return false;
+        }
+    }
+    return true;
 }
 
-// mc_schema_broker_satisfy_remaining_from_empty_schemas is called when a driver signals all listCollection results have
-// been fed. Assume any remaining collections have no schema.
+// mc_schema_broker_satisfy_remaining_from_empty_schemas is called when a driver signals all listCollection results
+// have been fed. Assume any remaining collections have no schema.
 static inline bool mc_schema_broker_satisfy_remaining_with_empty_schemas(mc_schema_broker_t *sb,
                                                                          mongocrypt_status_t *status) {
     BSON_ASSERT_PARAM(sb);
