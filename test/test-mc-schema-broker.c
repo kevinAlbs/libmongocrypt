@@ -84,16 +84,46 @@ static void test_mc_schema_broker_request(_mongocrypt_tester_t *tester) {
 }
 
 static void test_mc_schema_broker_satisfy_from_collInfo(_mongocrypt_tester_t *tester) {
-    bson_t *collinfo = TEST_FILE_AS_BSON("./test/data/schema-broker/collinfo-jsonSchema.json");
+    bson_t *collinfo_jsonSchema = TEST_FILE_AS_BSON("./test/data/schema-broker/collinfo-jsonSchema.json");
 
-    // Can satisfy.
+    // Can satisfy with collinfo containing $jsonSchema.
     {
         mongocrypt_status_t *status = mongocrypt_status_new();
         mc_schema_broker_t *sb = mc_schema_broker_new();
 
         ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "coll", status), status);
         ASSERT(mc_scheme_broker_need_more_schemas(sb));
-        ASSERT_OK_STATUS(mc_schema_broker_satisfy_from_collinfo(sb, collinfo, status), status);
+        ASSERT_OK_STATUS(mc_schema_broker_satisfy_from_collinfo(sb, collinfo_jsonSchema, status), status);
+        ASSERT(!mc_scheme_broker_need_more_schemas(sb));
+
+        mc_schema_broker_destroy(sb);
+        mongocrypt_status_destroy(status);
+    }
+
+    // Can satisfy with collinfo containing encryptedFields.
+    {
+        bson_t *collinfo_encryptedFields = TEST_FILE_AS_BSON("./test/data/schema-broker/collinfo-encryptedFields.json");
+        mongocrypt_status_t *status = mongocrypt_status_new();
+        mc_schema_broker_t *sb = mc_schema_broker_new();
+
+        ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "coll", status), status);
+        ASSERT(mc_scheme_broker_need_more_schemas(sb));
+        ASSERT_OK_STATUS(mc_schema_broker_satisfy_from_collinfo(sb, collinfo_encryptedFields, status), status);
+        ASSERT(!mc_scheme_broker_need_more_schemas(sb));
+
+        mc_schema_broker_destroy(sb);
+        mongocrypt_status_destroy(status);
+    }
+
+    // Can satisfy with collinfo containing no schema.
+    {
+        bson_t *collinfo_noSchema = TEST_FILE_AS_BSON("./test/data/schema-broker/collinfo-noSchema.json");
+        mongocrypt_status_t *status = mongocrypt_status_new();
+        mc_schema_broker_t *sb = mc_schema_broker_new();
+
+        ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "coll", status), status);
+        ASSERT(mc_scheme_broker_need_more_schemas(sb));
+        ASSERT_OK_STATUS(mc_schema_broker_satisfy_from_collinfo(sb, collinfo_noSchema, status), status);
         ASSERT(!mc_scheme_broker_need_more_schemas(sb));
 
         mc_schema_broker_destroy(sb);
@@ -106,7 +136,7 @@ static void test_mc_schema_broker_satisfy_from_collInfo(_mongocrypt_tester_t *te
         mc_schema_broker_t *sb = mc_schema_broker_new();
 
         ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "different", status), status);
-        ASSERT_FAILS_STATUS(mc_schema_broker_satisfy_from_collinfo(sb, collinfo, status),
+        ASSERT_FAILS_STATUS(mc_schema_broker_satisfy_from_collinfo(sb, collinfo_jsonSchema, status),
                             status,
                             "got unexpected collinfo result");
 
@@ -120,8 +150,8 @@ static void test_mc_schema_broker_satisfy_from_collInfo(_mongocrypt_tester_t *te
         mc_schema_broker_t *sb = mc_schema_broker_new();
 
         ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "coll", status), status);
-        ASSERT_OK_STATUS(mc_schema_broker_satisfy_from_collinfo(sb, collinfo, status), status);
-        ASSERT_FAILS_STATUS(mc_schema_broker_satisfy_from_collinfo(sb, collinfo, status),
+        ASSERT_OK_STATUS(mc_schema_broker_satisfy_from_collinfo(sb, collinfo_jsonSchema, status), status);
+        ASSERT_FAILS_STATUS(mc_schema_broker_satisfy_from_collinfo(sb, collinfo_jsonSchema, status),
                             status,
                             "got unexpected duplicate");
 
@@ -179,4 +209,5 @@ void _mongocrypt_tester_install_mc_schema_broker(_mongocrypt_tester_t *tester) {
     INSTALL_TEST(test_mc_schema_broker_request);
     INSTALL_TEST(test_mc_schema_broker_satisfy_from_collInfo);
     INSTALL_TEST(test_mc_schema_broker_satisfy_from_cache);
+    INSTALL_TEST(test_mc_schema_broker_satisfy_from_schemaMap);
 }
