@@ -322,8 +322,45 @@ static inline bool mc_schema_broker_satisfy_from_encryptedFieldsMap(mc_schema_br
                                                                     mongocrypt_status_t *status) {
     BSON_ASSERT_PARAM(sb);
     BSON_ASSERT_PARAM(ef_map);
-    CLIENT_ERR("mc_schema_broker_satisfy_from_encryptedFieldsMap is not yet implemented");
-    return false;
+
+    for (mc_schema_entry_t *it = sb->ll; it != NULL; it = it->next) {
+        if (it->satisfied) {
+            continue;
+        }
+
+        bool loop_ok = false;
+        char *ns = bson_strdup_printf("%s.%s", sb->db, it->coll);
+        bson_iter_t iter;
+
+        if (bson_iter_init_find(&iter, ef_map, ns)) {
+            if (!_mongocrypt_buffer_copy_from_document_iter(&it->encryptedFields_buf, &iter)) {
+                CLIENT_ERR("failed to read encryptedFields from encryptedFields map for collection: %s", ns);
+                goto loop_fail;
+            }
+
+            bson_t ef_bson;
+            if (!_mongocrypt_buffer_to_bson(&it->encryptedFields_buf, &ef_bson)) {
+                CLIENT_ERR("failed to create BSON from encryptedFields for collection: %s", ns);
+                goto loop_fail;
+            }
+
+            if (!mc_EncryptedFieldConfig_parse(&it->encryptedFields, &ef_bson, status, true /* range v2 */)) {
+                goto loop_fail;
+            }
+
+            it->satisfied = true;
+            it->used_local_schema = true;
+        }
+
+        loop_ok = true;
+    loop_fail:
+        bson_free(ns);
+        if (!loop_ok) {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 static inline bool mc_schema_broker_satisfy_from_cache(mc_schema_broker_t *sb,
