@@ -90,12 +90,24 @@ static void test_mc_schema_broker_satisfy_from_collInfo(_mongocrypt_tester_t *te
     {
         mongocrypt_status_t *status = mongocrypt_status_new();
         mc_schema_broker_t *sb = mc_schema_broker_new();
+        _mongocrypt_cache_t cache;
+        _mongocrypt_cache_collinfo_init(&cache);
 
         ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "coll", status), status);
         ASSERT(mc_scheme_broker_need_more_schemas(sb));
-        ASSERT_OK_STATUS(mc_schema_broker_satisfy_from_collinfo(sb, collinfo_jsonSchema, status), status);
+        ASSERT_OK_STATUS(mc_schema_broker_satisfy_from_collinfo(sb, collinfo_jsonSchema, &cache, status), status);
         ASSERT(!mc_scheme_broker_need_more_schemas(sb));
 
+        // Check that collinfo is cached.
+        {
+            bson_t *cached_collinfo;
+            ASSERT(_mongocrypt_cache_get(&cache, "db.coll", (void **)&cached_collinfo));
+            ASSERT(cached_collinfo);
+            ASSERT_EQUAL_BSON(collinfo_jsonSchema, cached_collinfo);
+            bson_destroy(cached_collinfo);
+        }
+
+        _mongocrypt_cache_cleanup(&cache);
         mc_schema_broker_destroy(sb);
         mongocrypt_status_destroy(status);
     }
@@ -105,12 +117,24 @@ static void test_mc_schema_broker_satisfy_from_collInfo(_mongocrypt_tester_t *te
         bson_t *collinfo_encryptedFields = TEST_FILE_AS_BSON("./test/data/schema-broker/collinfo-encryptedFields.json");
         mongocrypt_status_t *status = mongocrypt_status_new();
         mc_schema_broker_t *sb = mc_schema_broker_new();
+        _mongocrypt_cache_t cache;
+        _mongocrypt_cache_collinfo_init(&cache);
 
         ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "coll", status), status);
         ASSERT(mc_scheme_broker_need_more_schemas(sb));
-        ASSERT_OK_STATUS(mc_schema_broker_satisfy_from_collinfo(sb, collinfo_encryptedFields, status), status);
+        ASSERT_OK_STATUS(mc_schema_broker_satisfy_from_collinfo(sb, collinfo_encryptedFields, &cache, status), status);
         ASSERT(!mc_scheme_broker_need_more_schemas(sb));
 
+        // Check that collinfo is cached.
+        {
+            bson_t *cached_collinfo;
+            ASSERT(_mongocrypt_cache_get(&cache, "db.coll", (void **)&cached_collinfo));
+            ASSERT(cached_collinfo);
+            ASSERT_EQUAL_BSON(collinfo_encryptedFields, cached_collinfo);
+            bson_destroy(cached_collinfo);
+        }
+
+        _mongocrypt_cache_cleanup(&cache);
         mc_schema_broker_destroy(sb);
         mongocrypt_status_destroy(status);
     }
@@ -120,12 +144,24 @@ static void test_mc_schema_broker_satisfy_from_collInfo(_mongocrypt_tester_t *te
         bson_t *collinfo_noSchema = TEST_FILE_AS_BSON("./test/data/schema-broker/collinfo-noSchema.json");
         mongocrypt_status_t *status = mongocrypt_status_new();
         mc_schema_broker_t *sb = mc_schema_broker_new();
+        _mongocrypt_cache_t cache;
+        _mongocrypt_cache_collinfo_init(&cache);
 
         ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "coll", status), status);
         ASSERT(mc_scheme_broker_need_more_schemas(sb));
-        ASSERT_OK_STATUS(mc_schema_broker_satisfy_from_collinfo(sb, collinfo_noSchema, status), status);
+        ASSERT_OK_STATUS(mc_schema_broker_satisfy_from_collinfo(sb, collinfo_noSchema, &cache, status), status);
         ASSERT(!mc_scheme_broker_need_more_schemas(sb));
 
+        // Check that collinfo is cached.
+        {
+            bson_t *cached_collinfo;
+            ASSERT(_mongocrypt_cache_get(&cache, "db.coll", (void **)&cached_collinfo));
+            ASSERT(cached_collinfo);
+            ASSERT_EQUAL_BSON(collinfo_noSchema, cached_collinfo);
+            bson_destroy(cached_collinfo);
+        }
+
+        _mongocrypt_cache_cleanup(&cache);
         mc_schema_broker_destroy(sb);
         mongocrypt_status_destroy(status);
     }
@@ -134,12 +170,24 @@ static void test_mc_schema_broker_satisfy_from_collInfo(_mongocrypt_tester_t *te
     {
         mongocrypt_status_t *status = mongocrypt_status_new();
         mc_schema_broker_t *sb = mc_schema_broker_new();
+        _mongocrypt_cache_t cache;
+        _mongocrypt_cache_collinfo_init(&cache);
 
         ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "different", status), status);
-        ASSERT_FAILS_STATUS(mc_schema_broker_satisfy_from_collinfo(sb, collinfo_jsonSchema, status),
+        ASSERT_FAILS_STATUS(mc_schema_broker_satisfy_from_collinfo(sb, collinfo_jsonSchema, &cache, status),
                             status,
                             "got unexpected collinfo result");
 
+        // Check that collinfo is cached.
+        {
+            bson_t *cached_collinfo;
+            ASSERT(_mongocrypt_cache_get(&cache, "db.coll", (void **)&cached_collinfo));
+            ASSERT(cached_collinfo);
+            ASSERT_EQUAL_BSON(collinfo_jsonSchema, cached_collinfo);
+            bson_destroy(cached_collinfo);
+        }
+
+        _mongocrypt_cache_cleanup(&cache);
         mc_schema_broker_destroy(sb);
         mongocrypt_status_destroy(status);
     }
@@ -148,13 +196,16 @@ static void test_mc_schema_broker_satisfy_from_collInfo(_mongocrypt_tester_t *te
     {
         mongocrypt_status_t *status = mongocrypt_status_new();
         mc_schema_broker_t *sb = mc_schema_broker_new();
+        _mongocrypt_cache_t cache;
+        _mongocrypt_cache_collinfo_init(&cache);
 
         ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "coll", status), status);
-        ASSERT_OK_STATUS(mc_schema_broker_satisfy_from_collinfo(sb, collinfo_jsonSchema, status), status);
-        ASSERT_FAILS_STATUS(mc_schema_broker_satisfy_from_collinfo(sb, collinfo_jsonSchema, status),
+        ASSERT_OK_STATUS(mc_schema_broker_satisfy_from_collinfo(sb, collinfo_jsonSchema, &cache, status), status);
+        ASSERT_FAILS_STATUS(mc_schema_broker_satisfy_from_collinfo(sb, collinfo_jsonSchema, &cache, status),
                             status,
                             "got unexpected duplicate");
 
+        _mongocrypt_cache_cleanup(&cache);
         mc_schema_broker_destroy(sb);
         mongocrypt_status_destroy(status);
     }
@@ -163,12 +214,14 @@ static void test_mc_schema_broker_satisfy_from_collInfo(_mongocrypt_tester_t *te
     {
         mongocrypt_status_t *status = mongocrypt_status_new();
         mc_schema_broker_t *sb = mc_schema_broker_new();
+        _mongocrypt_cache_t cache;
+        _mongocrypt_cache_collinfo_init(&cache);
 
         ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "coll", status), status);
-        ASSERT_FAILS_STATUS(mc_schema_broker_satisfy_from_collinfo(sb, TMP_BSON("{}"), status),
+        ASSERT_FAILS_STATUS(mc_schema_broker_satisfy_from_collinfo(sb, TMP_BSON("{}"), &cache, status),
                             status,
                             "failed to find 'name'");
-
+        _mongocrypt_cache_cleanup(&cache);
         mc_schema_broker_destroy(sb);
         mongocrypt_status_destroy(status);
     }
@@ -318,17 +371,28 @@ static void test_mc_schema_broker_satisfy_remaining_with_empty_schemas(_mongocry
     {
         mongocrypt_status_t *status = mongocrypt_status_new();
         mc_schema_broker_t *sb = mc_schema_broker_new();
+        _mongocrypt_cache_t cache;
+        _mongocrypt_cache_collinfo_init(&cache);
 
         ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "coll", status), status);
         ASSERT(mc_scheme_broker_need_more_schemas(sb));
-        ASSERT_OK_STATUS(mc_schema_broker_satisfy_remaining_with_empty_schemas(sb, status), status);
+        ASSERT_OK_STATUS(mc_schema_broker_satisfy_remaining_with_empty_schemas(sb, &cache, status), status);
         ASSERT(!mc_scheme_broker_need_more_schemas(sb));
 
+        // Check that empty collinfo is cached.
+        {
+            bson_t *cached_collinfo;
+            ASSERT(_mongocrypt_cache_get(&cache, "db.coll", (void **)&cached_collinfo));
+            ASSERT(cached_collinfo);
+            ASSERT_EQUAL_BSON(TMP_BSON("{}"), cached_collinfo);
+            bson_destroy(cached_collinfo);
+        }
+
+        _mongocrypt_cache_cleanup(&cache);
         mc_schema_broker_destroy(sb);
         mongocrypt_status_destroy(status);
     }
 }
-
 
 void _mongocrypt_tester_install_mc_schema_broker(_mongocrypt_tester_t *tester) {
     INSTALL_TEST(test_mc_schema_broker_request);

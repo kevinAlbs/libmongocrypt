@@ -43,6 +43,8 @@ typedef struct {
     char *db; // Database shared by all schemas.
     mc_schema_entry_t *ll;
     size_t ll_len;
+    // TODO: add a `failed` to disallow use of the schema broker on error. Avoids needing to clean-up partially set
+    // entries.
 } mc_schema_broker_t;
 
 static inline mc_schema_broker_t *mc_schema_broker_new(void) {
@@ -234,8 +236,10 @@ static inline bool mc_schema_entry_satisfy_from_collinfo(mc_schema_entry_t *se,
     return true;
 }
 
-static inline bool
-mc_schema_broker_satisfy_from_collinfo(mc_schema_broker_t *sb, const bson_t *collinfo, mongocrypt_status_t *status) {
+static inline bool mc_schema_broker_satisfy_from_collinfo(mc_schema_broker_t *sb,
+                                                          const bson_t *collinfo,
+                                                          _mongocrypt_cache_t *collinfo_cache,
+                                                          mongocrypt_status_t *status) {
     BSON_ASSERT_PARAM(sb);
     BSON_ASSERT_PARAM(collinfo);
 
@@ -255,6 +259,16 @@ mc_schema_broker_satisfy_from_collinfo(mc_schema_broker_t *sb, const bson_t *col
             return false;
         }
         coll = bson_iter_utf8(&name_iter, NULL);
+    }
+
+    // Cache the received collinfo.
+    {
+        char *ns = bson_strdup_printf("%s.%s", sb->db, coll);
+        if (!_mongocrypt_cache_add_copy(collinfo_cache, ns, (void *)collinfo, status)) {
+            bson_free(ns);
+            return false;
+        }
+        bson_free(ns);
     }
 
     // Find matching entry.
@@ -403,6 +417,7 @@ static inline bool mc_schema_broker_satisfy_from_cache(mc_schema_broker_t *sb,
 // mc_schema_broker_satisfy_remaining_from_empty_schemas is called when a driver signals all listCollection results
 // have been fed. Assume any remaining collections have no schema.
 static inline bool mc_schema_broker_satisfy_remaining_with_empty_schemas(mc_schema_broker_t *sb,
+                                                                         _mongocrypt_cache_t *collinfo_cache,
                                                                          mongocrypt_status_t *status) {
     BSON_ASSERT_PARAM(sb);
 
@@ -411,18 +426,23 @@ static inline bool mc_schema_broker_satisfy_remaining_with_empty_schemas(mc_sche
             continue;
         }
 
+        // Cache the received collinfo.
+        {
+            char *ns = bson_strdup_printf("%s.%s", sb->db, it->coll);
+            bson_t empty = BSON_INITIALIZER;
+            if (!_mongocrypt_cache_add_copy(collinfo_cache, ns, &empty, status)) {
+                bson_destroy(&empty);
+                bson_free(ns);
+                return false;
+            }
+            bson_destroy(&empty);
+            bson_free(ns);
+        }
+
         it->satisfied = true;
     }
-    return true;
-}
 
-static inline bool mc_schema_broker_apply_to_cache(mc_schema_broker_t *sb,
-                                                   _mongocrypt_cache_t *listCollections_cache,
-                                                   mongocrypt_status_t *status) {
-    BSON_ASSERT_PARAM(sb);
-    BSON_ASSERT_PARAM(listCollections_cache);
-    CLIENT_ERR("mc_schema_broker_apply_to_cache is not yet implemented");
-    return false;
+    return true;
 }
 
 // mc_schema_broker_append_csfleEncryptionSchemas appends JSON schemas for CSFLE to send to QA.

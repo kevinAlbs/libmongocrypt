@@ -622,7 +622,7 @@ static bool _set_schema_from_collinfo(mongocrypt_ctx_t *ctx, const char *ns, bso
     /* Parse out the schema. */
     ectx = (_mongocrypt_ctx_encrypt_t *)ctx;
 
-    if (!mc_schema_broker_satisfy_from_collinfo(ectx->sb, collinfo, ctx->status)) {
+    if (!mc_schema_broker_satisfy_from_collinfo(ectx->sb, collinfo, &ctx->crypt->cache_collinfo, ctx->status)) {
         return _mongocrypt_ctx_fail(ctx);
     }
 
@@ -931,11 +931,7 @@ static bool _mongo_done_collinfo(mongocrypt_ctx_t *ctx) {
         bson_destroy(&empty_collinfo);
     }
 
-    if (!mc_schema_broker_satisfy_remaining_with_empty_schemas(ectx->sb, ctx->status)) {
-        return _mongocrypt_ctx_fail(ctx);
-    }
-
-    if (!mc_schema_broker_apply_to_cache(ectx->sb, &ctx->crypt->cache_collinfo, ctx->status)) {
+    if (!mc_schema_broker_satisfy_remaining_with_empty_schemas(ectx->sb, &ctx->crypt->cache_collinfo, ctx->status)) {
         return _mongocrypt_ctx_fail(ctx);
     }
 
