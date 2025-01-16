@@ -862,15 +862,9 @@ static bool _fle2_collect_keys_for_compaction(mongocrypt_ctx_t *ctx) {
     }
 
     // Expect only one schema. Get encryptedFields.
-    const mc_EncryptedFieldConfig_t *efc = mc_schema_broker_get_efc(ectx->sb, 0);
-    if (efc) {
-        for (field = efc->fields; field != NULL; field = field->next) {
-            if (!_mongocrypt_key_broker_request_id(&ctx->kb, &field->keyId)) {
-                _mongocrypt_key_broker_status(&ctx->kb, ctx->status);
-                _mongocrypt_ctx_fail(ctx);
-                return false;
-            }
-        }
+    if (!mc_schema_broker_request_encryptedFields_keys(ectx->sb, &ctx->kb, ctx->status)) {
+        _mongocrypt_ctx_fail(ctx);
+        return false;
     }
     return true;
 }

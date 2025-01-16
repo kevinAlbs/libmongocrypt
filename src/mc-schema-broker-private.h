@@ -19,6 +19,7 @@
 
 #include "mc-efc-private.h" // mc_EncryptedFieldConfig_t
 #include "mongocrypt-cache-collinfo-private.h"
+#include "mongocrypt-key-broker-private.h"
 #include "mongocrypt-private.h"
 #include "mongocrypt-status-private.h"
 #include "mongocrypt-util-private.h"
@@ -466,7 +467,10 @@ static inline bool mc_scheme_broker_need_more_schemas(mc_schema_broker_t *sb) {
     return false;
 }
 
-static inline const mc_EncryptedFieldConfig_t *mc_schema_broker_get_efc(mc_schema_broker_t *sb, size_t idx) {
+static inline bool mc_schema_broker_request_encryptedFields_keys(mc_schema_broker_t *sb,
+                                                                 _mongocrypt_key_broker_t *kb,
+                                                                 mongocrypt_status_t *status) {
+    CLIENT_ERR("mc_schema_broker_request_encryptedFields_keys is not yet implemented");
     return NULL;
 }
 
