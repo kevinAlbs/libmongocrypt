@@ -405,8 +405,15 @@ static inline bool mc_schema_broker_satisfy_from_cache(mc_schema_broker_t *sb,
 static inline bool mc_schema_broker_satisfy_remaining_with_empty_schemas(mc_schema_broker_t *sb,
                                                                          mongocrypt_status_t *status) {
     BSON_ASSERT_PARAM(sb);
-    CLIENT_ERR("mc_schema_broker_satisfy_remaining_with_empty_schemas is not yet implemented");
-    return false;
+
+    for (mc_schema_entry_t *it = sb->ll; it != NULL; it = it->next) {
+        if (it->satisfied) {
+            continue;
+        }
+
+        it->satisfied = true;
+    }
+    return true;
 }
 
 static inline bool mc_schema_broker_apply_to_cache(mc_schema_broker_t *sb,

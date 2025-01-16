@@ -313,10 +313,28 @@ static void test_mc_schema_broker_satisfy_from_encryptedFieldsMap(_mongocrypt_te
     }
 }
 
+static void test_mc_schema_broker_satisfy_remaining_with_empty_schemas(_mongocrypt_tester_t *tester) {
+    // Can satisfy.
+    {
+        mongocrypt_status_t *status = mongocrypt_status_new();
+        mc_schema_broker_t *sb = mc_schema_broker_new();
+
+        ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "coll", status), status);
+        ASSERT(mc_scheme_broker_need_more_schemas(sb));
+        ASSERT_OK_STATUS(mc_schema_broker_satisfy_remaining_with_empty_schemas(sb, status), status);
+        ASSERT(!mc_scheme_broker_need_more_schemas(sb));
+
+        mc_schema_broker_destroy(sb);
+        mongocrypt_status_destroy(status);
+    }
+}
+
+
 void _mongocrypt_tester_install_mc_schema_broker(_mongocrypt_tester_t *tester) {
     INSTALL_TEST(test_mc_schema_broker_request);
     INSTALL_TEST(test_mc_schema_broker_satisfy_from_collInfo);
     INSTALL_TEST(test_mc_schema_broker_satisfy_from_cache);
     INSTALL_TEST(test_mc_schema_broker_satisfy_from_schemaMap);
     INSTALL_TEST(test_mc_schema_broker_satisfy_from_encryptedFieldsMap);
+    INSTALL_TEST(test_mc_schema_broker_satisfy_remaining_with_empty_schemas);
 }
