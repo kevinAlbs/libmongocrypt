@@ -29,26 +29,22 @@
 typedef struct mc_schema_entry_t {
     char *coll;
 
-    // struct {
-    //     bool set;
-    //     bool has_siblings;
-    //     _mongocrypt_buffer_t buf; // Owns document.
-    //     bson_t as_bson;           // Non-owning view into buf.
-    //     bool is_remote;
-    // } jsonSchema;
+    struct {
+        bool set;
+        bool has_siblings;
+        _mongocrypt_buffer_t buf; // Owns document.
+        bson_t bson;              // Non-owning view into buf.
+        bool is_remote;
+    } jsonSchema;
 
-    // struct {
-    //     bool set;
-    //     bool has_siblings;
-    //     _mongocrypt_buffer_t buf; // Owns document.
-    //     bson_t as_bson;           // Non-owning view into buf.
-    // } encryptedFields;
+    struct {
+        bool set;
+        bool has_siblings;
+        _mongocrypt_buffer_t buf; // Owns document.
+        bson_t bson;              // Non-owning view into buf.
+        mc_EncryptedFieldConfig_t ef;
+    } encryptedFields;
 
-    bool jsonSchema_has_siblings;
-    bool used_local_schema;
-    _mongocrypt_buffer_t jsonSchema_buf;
-    mc_EncryptedFieldConfig_t encryptedFields;
-    _mongocrypt_buffer_t encryptedFields_buf;
     struct mc_schema_entry_t *next;
     bool satisfied;
 } mc_schema_entry_t;
@@ -106,9 +102,10 @@ static inline void mc_schema_broker_destroy(mc_schema_broker_t *sb) {
     mc_schema_entry_t *it = sb->ll;
     while (it != NULL) {
         bson_free(it->coll);
-        mc_EncryptedFieldConfig_cleanup(&it->encryptedFields);
-        _mongocrypt_buffer_cleanup(&it->encryptedFields_buf);
-        _mongocrypt_buffer_cleanup(&it->jsonSchema_buf);
+        // Always clean it->encryptedFields and it->jsonSchema. May be partially set.
+        mc_EncryptedFieldConfig_cleanup(&it->encryptedFields.ef);
+        _mongocrypt_buffer_cleanup(&it->encryptedFields.buf);
+        _mongocrypt_buffer_cleanup(&it->jsonSchema.buf);
         mc_schema_entry_t *tmp = it->next;
         bson_free(it);
         it = tmp;
@@ -206,19 +203,23 @@ static inline bool mc_schema_entry_satisfy_from_collinfo(mc_schema_entry_t *se,
                        coll);
             return false;
         }
-        if (!_mongocrypt_buffer_copy_from_document_iter(&se->encryptedFields_buf, &encryptedFields_iter)) {
+        if (!_mongocrypt_buffer_copy_from_document_iter(&se->encryptedFields.buf, &encryptedFields_iter)) {
             CLIENT_ERR("failed to copy `options.encryptedFields` for collection: %s.%s", db, coll);
             return false;
         }
-        bson_t encryptedFields_bson;
-        if (!_mongocrypt_buffer_to_bson(&se->encryptedFields_buf, &encryptedFields_bson)) {
+
+        if (!_mongocrypt_buffer_to_bson(&se->encryptedFields.buf, &se->encryptedFields.bson)) {
             CLIENT_ERR("unable to create BSON from `options.encryptedFields` for collection: %s.%s", db, coll);
             return false;
         }
 
-        if (!mc_EncryptedFieldConfig_parse(&se->encryptedFields, &encryptedFields_bson, status, true /* range v2 */)) {
+        if (!mc_EncryptedFieldConfig_parse(&se->encryptedFields.ef,
+                                           &se->encryptedFields.bson,
+                                           status,
+                                           true /* range v2 */)) {
             return false;
         }
+        se->encryptedFields.set = true;
     }
 
     // Check if collection is configured for CSFLE.
@@ -238,14 +239,23 @@ static inline bool mc_schema_entry_satisfy_from_collinfo(mc_schema_entry_t *se,
                     return false;
                 }
 
-                if (!_mongocrypt_buffer_copy_from_document_iter(&se->jsonSchema_buf, &validator_iter)) {
+                if (!_mongocrypt_buffer_copy_from_document_iter(&se->jsonSchema.buf, &validator_iter)) {
                     CLIENT_ERR("unable to copy `$jsonSchema` for collection: %s.%s", db, coll);
                     return false;
                 }
+
+                if (!_mongocrypt_buffer_to_bson(&se->jsonSchema.buf, &se->jsonSchema.bson)) {
+                    CLIENT_ERR("unable to create BSON from `$jsonSchema` for collection: %s.%s", db, coll);
+                    return false;
+                }
+
                 found_jsonSchema = true;
             } else {
-                se->jsonSchema_has_siblings = true;
+                se->jsonSchema.has_siblings = true;
             }
+            BSON_ASSERT(!se->jsonSchema.set);
+            se->jsonSchema.set = true;
+            se->jsonSchema.is_remote = true;
         }
     }
 
@@ -330,12 +340,20 @@ mc_schema_broker_satisfy_from_schemaMap(mc_schema_broker_t *sb, const bson_t *sc
         bson_iter_t iter;
 
         if (bson_iter_init_find(&iter, schema_map, ns)) {
-            if (!_mongocrypt_buffer_copy_from_document_iter(&it->jsonSchema_buf, &iter)) {
+            if (!_mongocrypt_buffer_copy_from_document_iter(&it->jsonSchema.buf, &iter)) {
                 CLIENT_ERR("failed to read schema from schema map for collection: %s", ns);
                 goto loop_fail;
             }
+
+            if (!_mongocrypt_buffer_to_bson(&it->jsonSchema.buf, &it->jsonSchema.bson)) {
+                CLIENT_ERR("unable to create BSON from schema map for collection: %s", ns);
+                goto loop_fail;
+            }
+
+            BSON_ASSERT(!it->jsonSchema.set);
+            it->jsonSchema.set = true;
+            it->jsonSchema.is_remote = false;
             it->satisfied = true;
-            it->used_local_schema = true;
         }
 
         loop_ok = true;
@@ -364,23 +382,26 @@ static inline bool mc_schema_broker_satisfy_from_encryptedFieldsMap(mc_schema_br
         bson_iter_t iter;
 
         if (bson_iter_init_find(&iter, ef_map, ns)) {
-            if (!_mongocrypt_buffer_copy_from_document_iter(&it->encryptedFields_buf, &iter)) {
+            if (!_mongocrypt_buffer_copy_from_document_iter(&it->encryptedFields.buf, &iter)) {
                 CLIENT_ERR("failed to read encryptedFields from encryptedFields map for collection: %s", ns);
                 goto loop_fail;
             }
 
-            bson_t ef_bson;
-            if (!_mongocrypt_buffer_to_bson(&it->encryptedFields_buf, &ef_bson)) {
-                CLIENT_ERR("failed to create BSON from encryptedFields for collection: %s", ns);
+            if (!_mongocrypt_buffer_to_bson(&it->encryptedFields.buf, &it->encryptedFields.bson)) {
+                CLIENT_ERR("failed to create BSON from encryptedFields map for collection: %s", ns);
                 goto loop_fail;
             }
 
-            if (!mc_EncryptedFieldConfig_parse(&it->encryptedFields, &ef_bson, status, true /* range v2 */)) {
+            if (!mc_EncryptedFieldConfig_parse(&it->encryptedFields.ef,
+                                               &it->encryptedFields.bson,
+                                               status,
+                                               true /* range v2 */)) {
                 goto loop_fail;
             }
 
+            BSON_ASSERT(!it->encryptedFields.set);
+            it->encryptedFields.set = true;
             it->satisfied = true;
-            it->used_local_schema = true;
         }
 
         loop_ok = true;
@@ -474,7 +495,7 @@ mc_schema_broker_append_csfleEncryptionSchemas(mc_schema_broker_t *sb, bson_t *o
     size_t num_jsonSchema = 0;
     for (mc_schema_entry_t *it = sb->ll; it != NULL; it = it->next) {
         BSON_ASSERT(it->satisfied);
-        if (!_mongocrypt_buffer_empty(&it->jsonSchema_buf)) {
+        if (it->jsonSchema.set) {
             num_jsonSchema++;
         }
     }
@@ -490,11 +511,9 @@ mc_schema_broker_append_csfleEncryptionSchemas(mc_schema_broker_t *sb, bson_t *o
     else if (num_jsonSchema == 1) {
         // Append the only jsonSchema with the "jsonSchema" field.
         for (mc_schema_entry_t *it = sb->ll; it != NULL; it = it->next) {
-            if (!_mongocrypt_buffer_empty(&it->jsonSchema_buf)) {
-                bson_t as_bson;
-                BSON_ASSERT(_mongocrypt_buffer_to_bson(&it->jsonSchema_buf, &as_bson));
-                BSON_ASSERT(BSON_APPEND_DOCUMENT(out, "jsonSchema", &as_bson));
-                BSON_ASSERT(BSON_APPEND_BOOL(out, "isRemoteSchema", !it->used_local_schema));
+            if (it->jsonSchema.set) {
+                BSON_ASSERT(BSON_APPEND_DOCUMENT(out, "jsonSchema", &it->jsonSchema.bson));
+                BSON_ASSERT(BSON_APPEND_BOOL(out, "isRemoteSchema", it->jsonSchema.is_remote));
             }
             return true; // No others to append.
         }
