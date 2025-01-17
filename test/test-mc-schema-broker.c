@@ -289,6 +289,21 @@ static void test_mc_schema_broker_satisfy_from_schemaMap(_mongocrypt_tester_t *t
         mongocrypt_status_destroy(status);
     }
 
+    // Can satisfy multiple.
+    {
+        mongocrypt_status_t *status = mongocrypt_status_new();
+        mc_schema_broker_t *sb = mc_schema_broker_new();
+
+        ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "coll", status), status);
+        ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "coll2", status), status);
+        ASSERT(mc_scheme_broker_need_more_schemas(sb));
+        ASSERT_OK_STATUS(mc_schema_broker_satisfy_from_schemaMap(sb, schemaMap, status), status);
+        ASSERT(!mc_scheme_broker_need_more_schemas(sb));
+
+        mc_schema_broker_destroy(sb);
+        mongocrypt_status_destroy(status);
+    }
+
     // Does not satisfy with non-matching entry.
     {
         mongocrypt_status_t *status = mongocrypt_status_new();
@@ -327,6 +342,21 @@ static void test_mc_schema_broker_satisfy_from_encryptedFieldsMap(_mongocrypt_te
         mc_schema_broker_t *sb = mc_schema_broker_new();
 
         ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "coll", status), status);
+        ASSERT(mc_scheme_broker_need_more_schemas(sb));
+        ASSERT_OK_STATUS(mc_schema_broker_satisfy_from_encryptedFieldsMap(sb, encryptedFieldsMap, status), status);
+        ASSERT(!mc_scheme_broker_need_more_schemas(sb));
+
+        mc_schema_broker_destroy(sb);
+        mongocrypt_status_destroy(status);
+    }
+
+    // Can satisfy multiple.
+    {
+        mongocrypt_status_t *status = mongocrypt_status_new();
+        mc_schema_broker_t *sb = mc_schema_broker_new();
+
+        ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "coll", status), status);
+        ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "coll2", status), status);
         ASSERT(mc_scheme_broker_need_more_schemas(sb));
         ASSERT_OK_STATUS(mc_schema_broker_satisfy_from_encryptedFieldsMap(sb, encryptedFieldsMap, status), status);
         ASSERT(!mc_scheme_broker_need_more_schemas(sb));
@@ -394,6 +424,77 @@ static void test_mc_schema_broker_satisfy_remaining_with_empty_schemas(_mongocry
     }
 }
 
+static void test_mc_schema_broker_append_csfleEncryptionSchemas(_mongocrypt_tester_t *tester) {
+    bson_t *schemaMap = TEST_FILE_AS_BSON("./test/data/schema-broker/schemaMap.json");
+    bson_t *jsonSchema = TEST_FILE_AS_BSON("./test/data/schema-broker/jsonSchema.json");
+    bson_t *jsonSchema2 = TEST_FILE_AS_BSON("./test/data/schema-broker/jsonSchema2.json");
+
+    // Appends one as jsonSchema.
+    {
+        mongocrypt_status_t *status = mongocrypt_status_new();
+        mc_schema_broker_t *sb = mc_schema_broker_new();
+
+        ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "coll", status), status);
+        ASSERT(mc_scheme_broker_need_more_schemas(sb));
+        ASSERT_OK_STATUS(mc_schema_broker_satisfy_from_schemaMap(sb, schemaMap, status), status);
+        ASSERT(!mc_scheme_broker_need_more_schemas(sb));
+
+        bson_t got = BSON_INITIALIZER;
+        ASSERT_OK_STATUS(mc_schema_broker_append_csfleEncryptionSchemas(sb, &got, status), status);
+        bson_t *expect = BCON_NEW("jsonSchema", BCON_DOCUMENT(jsonSchema), "isRemoteSchema", BCON_BOOL(false));
+        ASSERT_EQUAL_BSON(expect, &got);
+        bson_destroy(expect);
+
+        bson_destroy(&got);
+        mc_schema_broker_destroy(sb);
+        mongocrypt_status_destroy(status);
+    }
+
+    // Appends multiple as csfleEncryptionSchemas.
+    {
+        mongocrypt_status_t *status = mongocrypt_status_new();
+        mc_schema_broker_t *sb = mc_schema_broker_new();
+
+        ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "coll", status), status);
+        ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "coll2", status), status);
+        ASSERT(mc_scheme_broker_need_more_schemas(sb));
+        ASSERT_OK_STATUS(mc_schema_broker_satisfy_from_schemaMap(sb, schemaMap, status), status);
+        ASSERT(!mc_scheme_broker_need_more_schemas(sb));
+
+        bson_t got = BSON_INITIALIZER;
+        ASSERT_OK_STATUS(mc_schema_broker_append_csfleEncryptionSchemas(sb, &got, status), status);
+        bson_t *expect = BCON_NEW("csfleEncryptionSchemas",
+                                  "{",
+                                  "db.coll",
+                                  "{",
+                                  "schema",
+                                  BCON_DOCUMENT(jsonSchema),
+                                  "isRemoteSchema",
+                                  BCON_BOOL(false),
+                                  "}",
+                                  "db.coll2",
+                                  "{",
+                                  "schema",
+                                  BCON_DOCUMENT(jsonSchema2),
+                                  "isRemoteSchema",
+                                  BCON_BOOL(false),
+                                  "}",
+                                  "}");
+        ASSERT_EQUAL_BSON(expect, &got);
+        bson_destroy(expect);
+
+        bson_destroy(&got);
+        mc_schema_broker_destroy(sb);
+        mongocrypt_status_destroy(status);
+    }
+
+    // Appends an empty 'jsonSchema' when no schema is present.
+    {}
+
+    // Sets isRemoteSchema to false if schema was obtained from listCollections results.
+    {}
+}
+
 void _mongocrypt_tester_install_mc_schema_broker(_mongocrypt_tester_t *tester) {
     INSTALL_TEST(test_mc_schema_broker_request);
     INSTALL_TEST(test_mc_schema_broker_satisfy_from_collInfo);
@@ -401,4 +502,5 @@ void _mongocrypt_tester_install_mc_schema_broker(_mongocrypt_tester_t *tester) {
     INSTALL_TEST(test_mc_schema_broker_satisfy_from_schemaMap);
     INSTALL_TEST(test_mc_schema_broker_satisfy_from_encryptedFieldsMap);
     INSTALL_TEST(test_mc_schema_broker_satisfy_remaining_with_empty_schemas);
+    INSTALL_TEST(test_mc_schema_broker_append_csfleEncryptionSchemas);
 }

@@ -28,6 +28,22 @@
 // To be moved to mc-schema-broker.c ... begin
 typedef struct mc_schema_entry_t {
     char *coll;
+
+    // struct {
+    //     bool set;
+    //     bool has_siblings;
+    //     _mongocrypt_buffer_t buf; // Owns document.
+    //     bson_t as_bson;           // Non-owning view into buf.
+    //     bool is_remote;
+    // } jsonSchema;
+
+    // struct {
+    //     bool set;
+    //     bool has_siblings;
+    //     _mongocrypt_buffer_t buf; // Owns document.
+    //     bson_t as_bson;           // Non-owning view into buf.
+    // } encryptedFields;
+
     bool jsonSchema_has_siblings;
     bool used_local_schema;
     _mongocrypt_buffer_t jsonSchema_buf;
@@ -453,7 +469,39 @@ static inline bool
 mc_schema_broker_append_csfleEncryptionSchemas(mc_schema_broker_t *sb, bson_t *out, mongocrypt_status_t *status) {
     BSON_ASSERT_PARAM(sb);
     BSON_ASSERT_PARAM(out);
-    CLIENT_ERR("mc_schema_broker_append_csfleEncryptionSchemas is not yet implemented");
+
+    // Count number of JSON schemas.
+    size_t num_jsonSchema = 0;
+    for (mc_schema_entry_t *it = sb->ll; it != NULL; it = it->next) {
+        BSON_ASSERT(it->satisfied);
+        if (!_mongocrypt_buffer_empty(&it->jsonSchema_buf)) {
+            num_jsonSchema++;
+        }
+    }
+
+    if (num_jsonSchema == 0) {
+        // Append an empty jsonSchema.
+        bson_t empty = BSON_INITIALIZER;
+        BSON_ASSERT(BSON_APPEND_DOCUMENT(out, "jsonSchema", &empty));
+        BSON_ASSERT(BSON_APPEND_BOOL(out, "isRemoteSchema", false));
+        return true;
+    }
+
+    else if (num_jsonSchema == 1) {
+        // Append the only jsonSchema with the "jsonSchema" field.
+        for (mc_schema_entry_t *it = sb->ll; it != NULL; it = it->next) {
+            if (!_mongocrypt_buffer_empty(&it->jsonSchema_buf)) {
+                bson_t as_bson;
+                BSON_ASSERT(_mongocrypt_buffer_to_bson(&it->jsonSchema_buf, &as_bson));
+                BSON_ASSERT(BSON_APPEND_DOCUMENT(out, "jsonSchema", &as_bson));
+                BSON_ASSERT(BSON_APPEND_BOOL(out, "isRemoteSchema", !it->used_local_schema));
+            }
+            return true; // No others to append.
+        }
+    }
+
+    CLIENT_ERR("Multiple schemas not yet implemented");
+
     return false;
 }
 
