@@ -5,7 +5,7 @@
         "validator": {
             "$jsonSchema": {
                 "properties": {
-                    "ssn": {
+                    "encrypted": {
                         "encrypt": {
                             "keyId": [
                                 {

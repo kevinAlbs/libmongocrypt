@@ -428,8 +428,10 @@ static void test_mc_schema_broker_append_csfleEncryptionSchemas(_mongocrypt_test
     bson_t *schemaMap = TEST_FILE_AS_BSON("./test/data/schema-broker/schemaMap.json");
     bson_t *jsonSchema = TEST_FILE_AS_BSON("./test/data/schema-broker/jsonSchema.json");
     bson_t *jsonSchema2 = TEST_FILE_AS_BSON("./test/data/schema-broker/jsonSchema2.json");
+    bson_t *collinfo_jsonSchema = TEST_FILE_AS_BSON("./test/data/schema-broker/collinfo-jsonSchema.json");
+    bson_t *collinfo_encryptedFields2 = TEST_FILE_AS_BSON("./test/data/schema-broker/collinfo-encryptedFields2.json");
 
-    // Appends one as jsonSchema.
+    // Appends one JSON schema as jsonSchema.
     {
         mongocrypt_status_t *status = mongocrypt_status_new();
         mc_schema_broker_t *sb = mc_schema_broker_new();
@@ -450,7 +452,7 @@ static void test_mc_schema_broker_append_csfleEncryptionSchemas(_mongocrypt_test
         mongocrypt_status_destroy(status);
     }
 
-    // Appends multiple as csfleEncryptionSchemas.
+    // Appends multiple JSON schemas as csfleEncryptionSchemas.
     {
         mongocrypt_status_t *status = mongocrypt_status_new();
         mc_schema_broker_t *sb = mc_schema_broker_new();
@@ -489,10 +491,129 @@ static void test_mc_schema_broker_append_csfleEncryptionSchemas(_mongocrypt_test
     }
 
     // Appends an empty 'jsonSchema' when no schema is present.
-    {}
+    {
+        mongocrypt_status_t *status = mongocrypt_status_new();
+        mc_schema_broker_t *sb = mc_schema_broker_new();
+        _mongocrypt_cache_t cache;
+        _mongocrypt_cache_collinfo_init(&cache);
 
-    // Sets isRemoteSchema to false if schema was obtained from listCollections results.
-    {}
+        ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "coll", status), status);
+        ASSERT(mc_scheme_broker_need_more_schemas(sb));
+        ASSERT_OK_STATUS(mc_schema_broker_satisfy_remaining_with_empty_schemas(sb, &cache, status), status);
+        ASSERT(!mc_scheme_broker_need_more_schemas(sb));
+
+        bson_t got = BSON_INITIALIZER;
+        ASSERT_OK_STATUS(mc_schema_broker_append_csfleEncryptionSchemas(sb, &got, status), status);
+        bson_t *expect = TMP_BSON(BSON_STR({"jsonSchema" : {}, "isRemoteSchema" : false}));
+        ASSERT_EQUAL_BSON(expect, &got);
+
+        bson_destroy(&got);
+        _mongocrypt_cache_cleanup(&cache);
+        mc_schema_broker_destroy(sb);
+        mongocrypt_status_destroy(status);
+    }
+
+    // Appends empty JSON schema in 'csfleEncryptionSchemas' when one collection has a JSON schema and other does not.
+    {
+        mongocrypt_status_t *status = mongocrypt_status_new();
+        mc_schema_broker_t *sb = mc_schema_broker_new();
+        _mongocrypt_cache_t cache;
+        _mongocrypt_cache_collinfo_init(&cache);
+
+        ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "coll", status), status);
+        ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "coll2", status), status);
+        ASSERT(mc_scheme_broker_need_more_schemas(sb));
+        // Satisfy db.coll with a schema:
+        ASSERT_OK_STATUS(mc_schema_broker_satisfy_from_collinfo(sb, collinfo_jsonSchema, &cache, status), status);
+        // Satisfy db.coll2 with empty schema.
+        ASSERT_OK_STATUS(mc_schema_broker_satisfy_remaining_with_empty_schemas(sb, &cache, status), status);
+        ASSERT(!mc_scheme_broker_need_more_schemas(sb));
+
+        bson_t got = BSON_INITIALIZER;
+        ASSERT_OK_STATUS(mc_schema_broker_append_csfleEncryptionSchemas(sb, &got, status), status);
+        bson_t *expect = BCON_NEW("csfleEncryptionSchemas",
+                                  "{",
+                                  "db.coll",
+                                  "{",
+                                  "schema",
+                                  BCON_DOCUMENT(jsonSchema),
+                                  "isRemoteSchema",
+                                  BCON_BOOL(true),
+                                  "}",
+                                  "db.coll2",
+                                  "{",
+                                  "schema",
+                                  "{",
+                                  "}",
+                                  "isRemoteSchema",
+                                  BCON_BOOL(false),
+                                  "}",
+                                  "}");
+        ASSERT_EQUAL_BSON(expect, &got);
+
+        bson_destroy(expect);
+        bson_destroy(&got);
+        _mongocrypt_cache_cleanup(&cache);
+        mc_schema_broker_destroy(sb);
+        mongocrypt_status_destroy(status);
+    }
+
+    // Appends empty JSON schemas within 'csfleEncryptionSchemas' when no schema is present on any collection.
+    {
+        mongocrypt_status_t *status = mongocrypt_status_new();
+        mc_schema_broker_t *sb = mc_schema_broker_new();
+        _mongocrypt_cache_t cache;
+        _mongocrypt_cache_collinfo_init(&cache);
+
+        ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "coll", status), status);
+        ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "coll2", status), status);
+        ASSERT(mc_scheme_broker_need_more_schemas(sb));
+        ASSERT_OK_STATUS(mc_schema_broker_satisfy_remaining_with_empty_schemas(sb, &cache, status), status);
+        ASSERT(!mc_scheme_broker_need_more_schemas(sb));
+
+        bson_t got = BSON_INITIALIZER;
+        ASSERT_OK_STATUS(mc_schema_broker_append_csfleEncryptionSchemas(sb, &got, status), status);
+        bson_t *expect = TMP_BSON(BSON_STR({
+            "csfleEncryptionSchemas" : {
+                "db.coll" : {"schema" : {}, "isRemoteSchema" : false},
+                "db.coll2" : {"schema" : {}, "isRemoteSchema" : false}
+            }
+        }));
+        ASSERT_EQUAL_BSON(expect, &got);
+
+        bson_destroy(&got);
+        _mongocrypt_cache_cleanup(&cache);
+        mc_schema_broker_destroy(sb);
+        mongocrypt_status_destroy(status);
+    }
+
+    // Errors if mixing JSON schema with QE schema.
+    {
+        mongocrypt_status_t *status = mongocrypt_status_new();
+        mc_schema_broker_t *sb = mc_schema_broker_new();
+        _mongocrypt_cache_t cache;
+        _mongocrypt_cache_collinfo_init(&cache);
+
+        ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "coll", status), status);
+        ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "coll2", status), status);
+        ASSERT(mc_scheme_broker_need_more_schemas(sb));
+        // Satisfy db.coll with a JSON schema:
+        ASSERT_OK_STATUS(mc_schema_broker_satisfy_from_collinfo(sb, collinfo_jsonSchema, &cache, status), status);
+        // Satisfy db.coll2 with an encryptedFields:
+        ASSERT_OK_STATUS(mc_schema_broker_satisfy_from_collinfo(sb, collinfo_encryptedFields2, &cache, status), status);
+        ASSERT(!mc_scheme_broker_need_more_schemas(sb));
+
+        bson_t got = BSON_INITIALIZER;
+        ASSERT_FAILS_STATUS(
+            mc_schema_broker_append_csfleEncryptionSchemas(sb, &got, status),
+            status,
+            "Collection 'coll2' has encryptedFields but collection 'coll' has a JSON schema configured.");
+        bson_destroy(&got);
+        _mongocrypt_cache_cleanup(&cache);
+        mc_schema_broker_destroy(sb);
+        mongocrypt_status_destroy(status);
+    }
+}
 }
 
 void _mongocrypt_tester_install_mc_schema_broker(_mongocrypt_tester_t *tester) {

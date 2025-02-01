@@ -39,14 +39,13 @@ typedef struct mc_schema_entry_t {
 
     struct {
         bool set;
-        bool has_siblings;
         _mongocrypt_buffer_t buf; // Owns document.
         bson_t bson;              // Non-owning view into buf.
         mc_EncryptedFieldConfig_t ef;
     } encryptedFields;
 
     struct mc_schema_entry_t *next;
-    bool satisfied;
+    bool satisfied; // true once a schema is applied or all sources exhausted.
 } mc_schema_entry_t;
 
 // To be moved to mc-schema-broker.c ... end
@@ -483,45 +482,89 @@ static inline bool mc_schema_broker_satisfy_remaining_with_empty_schemas(mc_sche
     return true;
 }
 
-// mc_schema_broker_append_csfleEncryptionSchemas appends JSON schemas for CSFLE to send to QA.
-// For only one schema, use `jsonSchema` for backwards compatibility.
-// For multiple schemas, use `csfleEncryptionSchemas` (added in server 8.2).
+// mc_schema_broker_append_csfleEncryptionSchemas appends schema information to send to QA.
+// For only one JSON schema, use `jsonSchema` for backwards compatibility.
+// For multiple JSON schemas, use `csfleEncryptionSchemas` (added in server 8.2).
 static inline bool
 mc_schema_broker_append_csfleEncryptionSchemas(mc_schema_broker_t *sb, bson_t *out, mongocrypt_status_t *status) {
     BSON_ASSERT_PARAM(sb);
     BSON_ASSERT_PARAM(out);
 
-    // Count number of JSON schemas.
-    size_t num_jsonSchema = 0;
+    // Check if any collection has encryptedFields.
+    bool has_encryptedFields = false;
+    const char *coll_with_encryptedFields = NULL;
     for (mc_schema_entry_t *it = sb->ll; it != NULL; it = it->next) {
         BSON_ASSERT(it->satisfied);
-        if (it->jsonSchema.set) {
-            num_jsonSchema++;
+        if (it->encryptedFields.set) {
+            has_encryptedFields = true;
+            coll_with_encryptedFields = it->coll;
         }
     }
 
-    if (num_jsonSchema == 0) {
-        // Append an empty jsonSchema.
-        bson_t empty = BSON_INITIALIZER;
-        BSON_ASSERT(BSON_APPEND_DOCUMENT(out, "jsonSchema", &empty));
-        BSON_ASSERT(BSON_APPEND_BOOL(out, "isRemoteSchema", false));
+    if (has_encryptedFields) {
+        // If any collection has encryptedFields, error if any collection only has a JSON Schema.
+        for (mc_schema_entry_t *it = sb->ll; it != NULL; it = it->next) {
+            BSON_ASSERT(it->satisfied);
+            if (!it->encryptedFields.set && it->jsonSchema.set) {
+                const char *coll_with_jsonSchema = it->coll;
+                CLIENT_ERR("Collection '%s' has encryptedFields but collection '%s' has a JSON schema configured. To "
+                           "ignore the "
+                           "JSON schema, add '%s' to encryptedFieldsMap.",
+                           coll_with_encryptedFields,
+                           coll_with_jsonSchema,
+                           coll_with_jsonSchema);
+                return false;
+            }
+        }
+        // Handle encryptedFields in mc_schema_broker_append_encryptionInformation
         return true;
     }
 
-    else if (num_jsonSchema == 1) {
-        // Append the only jsonSchema with the "jsonSchema" field.
-        for (mc_schema_entry_t *it = sb->ll; it != NULL; it = it->next) {
-            if (it->jsonSchema.set) {
-                BSON_ASSERT(BSON_APPEND_DOCUMENT(out, "jsonSchema", &it->jsonSchema.bson));
-                BSON_ASSERT(BSON_APPEND_BOOL(out, "isRemoteSchema", it->jsonSchema.is_remote));
-            }
-            return true; // No others to append.
+    if (sb->ll_len == 1) {
+        mc_schema_entry_t *se = sb->ll;
+        BSON_ASSERT(se);
+        BSON_ASSERT(!se->next);
+        BSON_ASSERT(se->satisfied);
+        // Append single schema as `jsonSchema`.
+        if (se->jsonSchema.set) {
+            // Append the only jsonSchema with the "jsonSchema" field.
+            BSON_ASSERT(BSON_APPEND_DOCUMENT(out, "jsonSchema", &se->jsonSchema.bson));
+            BSON_ASSERT(BSON_APPEND_BOOL(out, "isRemoteSchema", se->jsonSchema.is_remote));
+        } else {
+            bson_t empty = BSON_INITIALIZER;
+            BSON_ASSERT(BSON_APPEND_DOCUMENT(out, "jsonSchema", &empty));
+            BSON_ASSERT(BSON_APPEND_BOOL(out, "isRemoteSchema", false));
         }
+        return true;
     }
 
-    CLIENT_ERR("Multiple schemas not yet implemented");
+    // Append multiple schemas as "csfleEncryptionSchemas"
+    bson_t csfleEncryptionSchemas;
+    BSON_ASSERT(BSON_APPEND_DOCUMENT_BEGIN(out, "csfleEncryptionSchemas", &csfleEncryptionSchemas));
 
-    return false;
+    for (mc_schema_entry_t *se = sb->ll; se != NULL; se = se->next) {
+        BSON_ASSERT(se->satisfied);
+
+        char *ns = bson_strdup_printf("%s.%s", sb->db, se->coll);
+        bson_t ns_to_doc;
+        BSON_ASSERT(BSON_APPEND_DOCUMENT_BEGIN(&csfleEncryptionSchemas, ns, &ns_to_doc));
+        bson_free(ns);
+
+        if (!se->jsonSchema.set) {
+            // Append the only jsonSchema with the "jsonSchema" field.
+            bson_t empty = BSON_INITIALIZER;
+            BSON_ASSERT(BSON_APPEND_DOCUMENT(&ns_to_doc, "schema", &empty));
+            BSON_ASSERT(BSON_APPEND_BOOL(&ns_to_doc, "isRemoteSchema", false));
+        } else {
+            BSON_ASSERT(BSON_APPEND_DOCUMENT(&ns_to_doc, "schema", &se->jsonSchema.bson));
+            BSON_ASSERT(BSON_APPEND_BOOL(&ns_to_doc, "isRemoteSchema", se->jsonSchema.is_remote));
+        }
+        BSON_ASSERT(bson_append_document_end(&csfleEncryptionSchemas, &ns_to_doc));
+    }
+
+    BSON_ASSERT(bson_append_document_end(out, &csfleEncryptionSchemas));
+
+    return true;
 }
 
 static inline bool mc_scheme_broker_need_more_schemas(mc_schema_broker_t *sb) {

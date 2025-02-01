@@ -1,7 +1,7 @@
 {
     "properties": {
-        "encrypted": {
-            "encrypt2": {
+        "encrypted2": {
+            "encrypt": {
                 "keyId": [
                     {
                         "$binary": {
