@@ -614,6 +614,21 @@ static void test_mc_schema_broker_append_csfleEncryptionSchemas(_mongocrypt_test
         mongocrypt_status_destroy(status);
     }
 }
+
+static void test_mc_schema_broker_append_encryptionInformation(_mongocrypt_tester_t *tester) {
+    // TODO: tests for encryptionInformation ... begin
+    // Appends one QE schema with `encryptionInformation`.
+    {}
+
+    // Appends multiple QE schemas with `encryptionInformation`.
+    {}
+
+    // Appends one QE schema with `encryptionInformation`.
+    {}
+
+    // Appends empty QE schema in 'encryptionInformation' when one collection has a QE schema and other does not.
+    {}
+    // TODO: tests for encryptionInformation ... end
 }
 
 void _mongocrypt_tester_install_mc_schema_broker(_mongocrypt_tester_t *tester) {
@@ -624,4 +639,5 @@ void _mongocrypt_tester_install_mc_schema_broker(_mongocrypt_tester_t *tester) {
     INSTALL_TEST(test_mc_schema_broker_satisfy_from_encryptedFieldsMap);
     INSTALL_TEST(test_mc_schema_broker_satisfy_remaining_with_empty_schemas);
     INSTALL_TEST(test_mc_schema_broker_append_csfleEncryptionSchemas);
+    INSTALL_TEST(test_mc_schema_broker_append_encryptionInformation);
 }
