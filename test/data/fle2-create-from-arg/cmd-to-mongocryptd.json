@@ -1,0 +1,10 @@
+{
+    "create": "coll",
+    "encryptedFields": {
+        "escCollection": "enxcol_.coll.esc",
+        "ecocCollection": "enxcol_.coll.ecoc",
+        "fields": []
+    },
+    "jsonSchema": {},
+    "isRemoteSchema": true
+}
