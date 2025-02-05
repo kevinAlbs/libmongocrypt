@@ -616,19 +616,169 @@ static void test_mc_schema_broker_append_csfleEncryptionSchemas(_mongocrypt_test
 }
 
 static void test_mc_schema_broker_append_encryptionInformation(_mongocrypt_tester_t *tester) {
-    // TODO: tests for encryptionInformation ... begin
+    bson_t *encryptedFields = TEST_FILE_AS_BSON("./test/data/schema-broker/encryptedFields.json");
+    bson_t *encryptedFields2 = TEST_FILE_AS_BSON("./test/data/schema-broker/encryptedFields2.json");
+    bson_t *encryptedFieldsMap =
+        BCON_NEW("db.coll", BCON_DOCUMENT(encryptedFields), "db.coll2", BCON_DOCUMENT(encryptedFields2));
+
     // Appends one QE schema with `encryptionInformation`.
-    {}
+    {
+        mongocrypt_status_t *status = mongocrypt_status_new();
+        mc_schema_broker_t *sb = mc_schema_broker_new();
+
+        ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "coll", status), status);
+        ASSERT(mc_scheme_broker_need_more_schemas(sb));
+        ASSERT_OK_STATUS(mc_schema_broker_satisfy_from_encryptedFieldsMap(sb, encryptedFieldsMap, status), status);
+        ASSERT(!mc_scheme_broker_need_more_schemas(sb));
+
+        bson_t got = BSON_INITIALIZER;
+        ASSERT_OK_STATUS(mc_schema_broker_append_encryptionInformation(sb, &got, status), status);
+        bson_t *expect = BCON_NEW("encryptionInformation",
+                                  "{",
+                                  "type",
+                                  BCON_INT32(1),
+                                  "schema",
+                                  "{",
+                                  "db.coll",
+                                  BCON_DOCUMENT(encryptedFields),
+                                  "}",
+                                  "}");
+        ASSERT_EQUAL_BSON(expect, &got);
+        bson_destroy(expect);
+
+        bson_destroy(&got);
+        mc_schema_broker_destroy(sb);
+        mongocrypt_status_destroy(status);
+    }
 
     // Appends multiple QE schemas with `encryptionInformation`.
-    {}
+    {
+        mongocrypt_status_t *status = mongocrypt_status_new();
+        mc_schema_broker_t *sb = mc_schema_broker_new();
 
-    // Appends one QE schema with `encryptionInformation`.
-    {}
+        ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "coll", status), status);
+        ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "coll2", status), status);
+        ASSERT(mc_scheme_broker_need_more_schemas(sb));
+        ASSERT_OK_STATUS(mc_schema_broker_satisfy_from_encryptedFieldsMap(sb, encryptedFieldsMap, status), status);
+        ASSERT(!mc_scheme_broker_need_more_schemas(sb));
+
+        bson_t got = BSON_INITIALIZER;
+        ASSERT_OK_STATUS(mc_schema_broker_append_encryptionInformation(sb, &got, status), status);
+        bson_t *expect = BCON_NEW("encryptionInformation",
+                                  "{",
+                                  "type",
+                                  BCON_INT32(1),
+                                  "schema",
+                                  "{",
+                                  "db.coll",
+                                  BCON_DOCUMENT(encryptedFields),
+                                  "db.coll2",
+                                  BCON_DOCUMENT(encryptedFields2),
+                                  "}",
+                                  "}");
+        ASSERT_EQUAL_BSON(expect, &got);
+        bson_destroy(expect);
+
+        bson_destroy(&got);
+        mc_schema_broker_destroy(sb);
+        mongocrypt_status_destroy(status);
+    }
 
     // Appends empty QE schema in 'encryptionInformation' when one collection has a QE schema and other does not.
-    {}
-    // TODO: tests for encryptionInformation ... end
+    // Appends multiple QE schemas with `encryptionInformation`.
+    {
+        mongocrypt_status_t *status = mongocrypt_status_new();
+        mc_schema_broker_t *sb = mc_schema_broker_new();
+        _mongocrypt_cache_t cache;
+        _mongocrypt_cache_collinfo_init(&cache);
+
+        ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "coll", status), status);
+        ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "noschema", status), status);
+        ASSERT(mc_scheme_broker_need_more_schemas(sb));
+        ASSERT_OK_STATUS(mc_schema_broker_satisfy_from_encryptedFieldsMap(sb, encryptedFieldsMap, status), status);
+        ASSERT_OK_STATUS(mc_schema_broker_satisfy_remaining_with_empty_schemas(sb, &cache, status), status);
+        ASSERT(!mc_scheme_broker_need_more_schemas(sb));
+
+        bson_t got = BSON_INITIALIZER;
+        ASSERT_OK_STATUS(mc_schema_broker_append_encryptionInformation(sb, &got, status), status);
+        bson_t *expect = BCON_NEW("encryptionInformation",
+                                  "{",
+                                  "type",
+                                  BCON_INT32(1),
+                                  "schema",
+                                  "{",
+                                  "db.coll",
+                                  BCON_DOCUMENT(encryptedFields),
+                                  "db.noschema",
+                                  "{",
+                                  "}",
+                                  "}",
+                                  "}");
+        ASSERT_EQUAL_BSON(expect, &got);
+        bson_destroy(expect);
+
+        bson_destroy(&got);
+        mc_schema_broker_destroy(sb);
+        _mongocrypt_cache_cleanup(&cache);
+        mongocrypt_status_destroy(status);
+    }
+
+    bson_destroy(encryptedFieldsMap);
+}
+
+static void test_mc_schema_broker_get_encryptedFields(_mongocrypt_tester_t *tester) {
+    bson_t *encryptedFieldsMap = TEST_FILE_AS_BSON("./test/data/schema-broker/encryptedFieldsMap.json");
+
+    // Can find.
+    {
+        mongocrypt_status_t *status = mongocrypt_status_new();
+        mc_schema_broker_t *sb = mc_schema_broker_new();
+
+        ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "coll", status), status);
+        ASSERT(mc_scheme_broker_need_more_schemas(sb));
+        ASSERT_OK_STATUS(mc_schema_broker_satisfy_from_encryptedFieldsMap(sb, encryptedFieldsMap, status), status);
+        ASSERT(!mc_scheme_broker_need_more_schemas(sb));
+
+        const mc_EncryptedFieldConfig_t *efc = mc_schema_broker_get_encryptedFields(sb, "coll", status);
+        ASSERT_OK_STATUS(efc, status);
+        // Check one field of returned mc_EncryptedFieldConfig_t.
+        ASSERT_STREQUAL(efc->fields->path, "encryptedIndexed");
+        mc_schema_broker_destroy(sb);
+        mongocrypt_status_destroy(status);
+    }
+
+    // Reports error if not found.
+    {
+        mongocrypt_status_t *status = mongocrypt_status_new();
+        mc_schema_broker_t *sb = mc_schema_broker_new();
+
+        ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "coll", status), status);
+        ASSERT(mc_scheme_broker_need_more_schemas(sb));
+        ASSERT_OK_STATUS(mc_schema_broker_satisfy_from_encryptedFieldsMap(sb, encryptedFieldsMap, status), status);
+        ASSERT(!mc_scheme_broker_need_more_schemas(sb));
+
+        const mc_EncryptedFieldConfig_t *efc = mc_schema_broker_get_encryptedFields(sb, "does-not-exist", status);
+        ASSERT_FAILS_STATUS(efc, status, "Expected encryptedFields");
+        mc_schema_broker_destroy(sb);
+        mongocrypt_status_destroy(status);
+    }
+}
+
+static void test_mc_schema_broker_satisfy_from_create_or_collMod(_mongocrypt_tester_t *tester) {
+    bson_t *cmd = TEST_FILE_AS_BSON("./test/data/schema-broker/create-with-jsonSchema.json");
+
+    // Can satisfy.
+    {
+        mongocrypt_status_t *status = mongocrypt_status_new();
+        mc_schema_broker_t *sb = mc_schema_broker_new();
+
+        ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "coll", status), status);
+        ASSERT(mc_scheme_broker_need_more_schemas(sb));
+        ASSERT_OK_STATUS(mc_schema_broker_satisfy_from_create_or_collMod(sb, cmd, status), status);
+        ASSERT(!mc_scheme_broker_need_more_schemas(sb));
+        mc_schema_broker_destroy(sb);
+        mongocrypt_status_destroy(status);
+    }
 }
 
 void _mongocrypt_tester_install_mc_schema_broker(_mongocrypt_tester_t *tester) {
@@ -640,4 +790,6 @@ void _mongocrypt_tester_install_mc_schema_broker(_mongocrypt_tester_t *tester) {
     INSTALL_TEST(test_mc_schema_broker_satisfy_remaining_with_empty_schemas);
     INSTALL_TEST(test_mc_schema_broker_append_csfleEncryptionSchemas);
     INSTALL_TEST(test_mc_schema_broker_append_encryptionInformation);
+    INSTALL_TEST(test_mc_schema_broker_get_encryptedFields);
+    INSTALL_TEST(test_mc_schema_broker_satisfy_from_create_or_collMod);
 }

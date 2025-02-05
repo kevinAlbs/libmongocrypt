@@ -159,12 +159,101 @@ mc_schema_broker_append_listCollections_filter(const mc_schema_broker_t *sb, bso
     return true;
 }
 
+static inline void append_encryptedFields(const bson_t *encryptedFields, const char *coll, bson_t *out) {
+    BSON_ASSERT_PARAM(encryptedFields);
+    BSON_ASSERT_PARAM(out);
+    BSON_ASSERT_PARAM(coll);
+
+    bool has_escCollection = false;
+    bool has_ecocCollection = false;
+
+    bson_iter_t iter;
+    BSON_ASSERT(bson_iter_init(&iter, encryptedFields));
+
+    // Copy all values except state collections.
+    while (bson_iter_next(&iter)) {
+        if (strcmp(bson_iter_key(&iter), "escCollection") == 0) {
+            has_escCollection = true;
+        }
+        if (strcmp(bson_iter_key(&iter), "ecocCollection") == 0) {
+            has_ecocCollection = true;
+        }
+        BSON_ASSERT(BSON_APPEND_VALUE(out, bson_iter_key(&iter), bson_iter_value(&iter)));
+    }
+
+    if (!has_escCollection) {
+        char *default_escCollection = bson_strdup_printf("enxcol_.%s.esc", coll);
+        BSON_ASSERT(BSON_APPEND_UTF8(out, "escCollection", default_escCollection));
+        bson_free(default_escCollection);
+    }
+
+    if (!has_ecocCollection) {
+        char *default_ecocCollection = bson_strdup_printf("enxcol_.%s.ecoc", coll);
+        BSON_ASSERT(BSON_APPEND_UTF8(out, "ecocCollection", default_ecocCollection));
+        bson_free(default_ecocCollection);
+    }
+}
+
 static inline bool
 mc_schema_broker_append_encryptionInformation(const mc_schema_broker_t *sb, bson_t *out, mongocrypt_status_t *status) {
     BSON_ASSERT_PARAM(sb);
     BSON_ASSERT_PARAM(out);
-    CLIENT_ERR("mc_schema_broker_append_encryptionInformation is not yet implemented");
-    return false;
+
+    // Check if any collection has encryptedFields.
+    bool has_encryptedFields = false;
+    const char *coll_with_encryptedFields = NULL;
+    for (mc_schema_entry_t *it = sb->ll; it != NULL; it = it->next) {
+        BSON_ASSERT(it->satisfied);
+        if (it->encryptedFields.set) {
+            has_encryptedFields = true;
+            coll_with_encryptedFields = it->coll;
+            break;
+        }
+    }
+
+    if (has_encryptedFields) {
+        // If any collection has encryptedFields, error if any collection only has a JSON Schema.
+        for (mc_schema_entry_t *it = sb->ll; it != NULL; it = it->next) {
+            BSON_ASSERT(it->satisfied);
+            if (!it->encryptedFields.set && it->jsonSchema.set) {
+                const char *coll_with_jsonSchema = it->coll;
+                CLIENT_ERR("Collection '%s' has encryptedFields but collection '%s' has a JSON schema configured. To "
+                           "ignore the JSON schema, add '%s' to encryptedFieldsMap.",
+                           coll_with_encryptedFields,
+                           coll_with_jsonSchema,
+                           coll_with_jsonSchema);
+                return false;
+            }
+        }
+    } else {
+        // Not needed.
+        return true;
+    }
+
+    bson_t encryption_information_bson;
+    BSON_ASSERT(BSON_APPEND_DOCUMENT_BEGIN(out, "encryptionInformation", &encryption_information_bson));
+    BSON_ASSERT(BSON_APPEND_INT32(&encryption_information_bson, "type", 1));
+
+    bson_t schema_bson;
+    BSON_ASSERT(BSON_APPEND_DOCUMENT_BEGIN(&encryption_information_bson, "schema", &schema_bson));
+
+    for (mc_schema_entry_t *se = sb->ll; se != NULL; se = se->next) {
+        BSON_ASSERT(se->satisfied);
+        char *ns = bson_strdup_printf("%s.%s", sb->db, se->coll);
+        if (!se->encryptedFields.set) {
+            bson_t empty = BSON_INITIALIZER;
+            BSON_ASSERT(BSON_APPEND_DOCUMENT(&schema_bson, ns, &empty));
+        } else {
+            bson_t ns_to_schema_bson;
+            BSON_ASSERT(BSON_APPEND_DOCUMENT_BEGIN(&schema_bson, ns, &ns_to_schema_bson));
+            append_encryptedFields(&se->encryptedFields.bson, se->coll, &ns_to_schema_bson);
+            BSON_ASSERT(bson_append_document_end(&schema_bson, &ns_to_schema_bson));
+        }
+        bson_free(ns);
+    }
+    BSON_ASSERT(bson_append_document_end(&encryption_information_bson, &schema_bson));
+    BSON_ASSERT(bson_append_document_end(out, &encryption_information_bson));
+    return true;
 }
 
 static inline bool mc_schema_entry_satisfy_from_collinfo(mc_schema_entry_t *se,
@@ -498,6 +587,7 @@ mc_schema_broker_append_csfleEncryptionSchemas(mc_schema_broker_t *sb, bson_t *o
         if (it->encryptedFields.set) {
             has_encryptedFields = true;
             coll_with_encryptedFields = it->coll;
+            break;
         }
     }
 
@@ -508,8 +598,7 @@ mc_schema_broker_append_csfleEncryptionSchemas(mc_schema_broker_t *sb, bson_t *o
             if (!it->encryptedFields.set && it->jsonSchema.set) {
                 const char *coll_with_jsonSchema = it->coll;
                 CLIENT_ERR("Collection '%s' has encryptedFields but collection '%s' has a JSON schema configured. To "
-                           "ignore the "
-                           "JSON schema, add '%s' to encryptedFieldsMap.",
+                           "ignore the JSON schema, add '%s' to encryptedFieldsMap.",
                            coll_with_encryptedFields,
                            coll_with_jsonSchema,
                            coll_with_jsonSchema);
@@ -521,13 +610,12 @@ mc_schema_broker_append_csfleEncryptionSchemas(mc_schema_broker_t *sb, bson_t *o
     }
 
     if (sb->ll_len == 1) {
+        // Append the only jsonSchema with the "jsonSchema" field.
         mc_schema_entry_t *se = sb->ll;
         BSON_ASSERT(se);
         BSON_ASSERT(!se->next);
         BSON_ASSERT(se->satisfied);
-        // Append single schema as `jsonSchema`.
         if (se->jsonSchema.set) {
-            // Append the only jsonSchema with the "jsonSchema" field.
             BSON_ASSERT(BSON_APPEND_DOCUMENT(out, "jsonSchema", &se->jsonSchema.bson));
             BSON_ASSERT(BSON_APPEND_BOOL(out, "isRemoteSchema", se->jsonSchema.is_remote));
         } else {
@@ -551,7 +639,7 @@ mc_schema_broker_append_csfleEncryptionSchemas(mc_schema_broker_t *sb, bson_t *o
         bson_free(ns);
 
         if (!se->jsonSchema.set) {
-            // Append the only jsonSchema with the "jsonSchema" field.
+            // Append as an empty document.
             bson_t empty = BSON_INITIALIZER;
             BSON_ASSERT(BSON_APPEND_DOCUMENT(&ns_to_doc, "schema", &empty));
             BSON_ASSERT(BSON_APPEND_BOOL(&ns_to_doc, "isRemoteSchema", false));
@@ -577,11 +665,33 @@ static inline bool mc_scheme_broker_need_more_schemas(mc_schema_broker_t *sb) {
     return false;
 }
 
-static inline bool mc_schema_broker_request_encryptedFields_keys(mc_schema_broker_t *sb,
-                                                                 _mongocrypt_key_broker_t *kb,
-                                                                 mongocrypt_status_t *status) {
-    CLIENT_ERR("mc_schema_broker_request_encryptedFields_keys is not yet implemented");
+static inline const mc_EncryptedFieldConfig_t *
+mc_schema_broker_get_encryptedFields(mc_schema_broker_t *sb, const char *coll, mongocrypt_status_t *status) {
+    BSON_ASSERT_PARAM(sb);
+    BSON_ASSERT_PARAM(coll);
+    for (mc_schema_entry_t *it = sb->ll; it != NULL; it = it->next) {
+        if (0 != strcmp(it->coll, coll)) {
+            continue;
+        }
+        if (!it->satisfied) {
+            CLIENT_ERR("Expected encryptedFields for '%s', but schema request not satisfied", coll);
+            return NULL;
+        }
+        if (!it->encryptedFields.set) {
+            CLIENT_ERR("Expected encryptedFields for '%s', but none set", coll);
+            return NULL;
+        }
+        return &it->encryptedFields.ef;
+    }
+    CLIENT_ERR("Expected encryptedFields for '%s', but did not find entry", coll);
     return NULL;
+}
+
+static inline bool mc_schema_broker_satisfy_from_create_or_collMod(mc_schema_broker_t *sb,
+                                                                   const bson_t *cmd,
+                                                                   mongocrypt_status_t *status) {
+    CLIENT_ERR("Not yet implemented");
+    return false;
 }
 
 #endif // MC_SCHEMA_BROKER_PRIVATE_H
