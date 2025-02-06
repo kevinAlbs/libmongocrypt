@@ -613,6 +613,32 @@ static void test_mc_schema_broker_append_csfleEncryptionSchemas(_mongocrypt_test
         mc_schema_broker_destroy(sb);
         mongocrypt_status_destroy(status);
     }
+
+    // Appends nothing if only QE schemas are present.
+    {
+        mongocrypt_status_t *status = mongocrypt_status_new();
+        mc_schema_broker_t *sb = mc_schema_broker_new();
+        _mongocrypt_cache_t cache;
+        _mongocrypt_cache_collinfo_init(&cache);
+
+        ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "coll", status), status);
+        ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "coll2", status), status);
+        ASSERT(mc_scheme_broker_need_more_schemas(sb));
+        // Satisfy db.coll2 with an encryptedFields:
+        ASSERT_OK_STATUS(mc_schema_broker_satisfy_from_collinfo(sb, collinfo_encryptedFields2, &cache, status), status);
+        // Satisfy db.coll with empty.
+        ASSERT_OK_STATUS(mc_schema_broker_satisfy_remaining_with_empty_schemas(sb, &cache, status), status);
+        ASSERT(!mc_scheme_broker_need_more_schemas(sb));
+
+        bson_t got = BSON_INITIALIZER;
+        ASSERT_OK_STATUS(mc_schema_broker_append_csfleEncryptionSchemas(sb, &got, status), status);
+        ASSERT_EQUAL_BSON(TMP_BSON("{}"), &got);
+
+        bson_destroy(&got);
+        _mongocrypt_cache_cleanup(&cache);
+        mc_schema_broker_destroy(sb);
+        mongocrypt_status_destroy(status);
+    }
 }
 
 static void test_mc_schema_broker_append_encryptionInformation(_mongocrypt_tester_t *tester) {
