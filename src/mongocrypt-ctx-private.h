@@ -20,6 +20,7 @@
 #include "mc-efc-private.h"
 #include "mc-optional-private.h"
 #include "mc-rangeopts-private.h"
+#include "mc-schema-broker-private.h"
 #include "mongocrypt-buffer-private.h"
 #include "mongocrypt-endpoint-private.h"
 #include "mongocrypt-key-broker-private.h"
@@ -160,6 +161,8 @@ typedef struct {
 
     _mongocrypt_buffer_t list_collections_filter;
     _mongocrypt_buffer_t schema;
+
+    mc_schema_broker_t *sb;
     /* TODO CDRIVER-3150: audit + rename these buffers.
      * original_cmd for explicit is {v: <BSON value>}, for auto is the command to
      * be encrypted.
