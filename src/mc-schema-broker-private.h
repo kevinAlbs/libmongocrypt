@@ -98,6 +98,9 @@ mc_schema_broker_request(mc_schema_broker_t *sb, const char *db, const char *col
 }
 
 static inline void mc_schema_broker_destroy(mc_schema_broker_t *sb) {
+    if (!sb) {
+        return;
+    }
     mc_schema_entry_t *it = sb->ll;
     while (it != NULL) {
         bson_free(it->coll);
