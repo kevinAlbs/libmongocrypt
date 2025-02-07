@@ -422,7 +422,7 @@ static bool _set_schema_from_collinfo(mongocrypt_ctx_t *ctx, bson_t *collinfo) {
                 if (found_jsonschema) {
                     return _mongocrypt_ctx_fail_w_msg(ctx, "duplicate $jsonSchema fields found");
                 }
-                if (!_mongocrypt_buffer_copy_from_document_iter(&ectx->schema, &iter)) {
+                if (!_mongocrypt_buffer_copy_from_document_iter(&ectx->schema_old, &iter)) {
                     return _mongocrypt_ctx_fail_w_msg(ctx, "malformed $jsonSchema");
                 }
                 found_jsonschema = true;
@@ -434,7 +434,7 @@ static bool _set_schema_from_collinfo(mongocrypt_ctx_t *ctx, bson_t *collinfo) {
     if (!found_jsonschema) {
         bson_t empty = BSON_INITIALIZER;
 
-        _mongocrypt_buffer_steal_from_bson(&ectx->schema, &empty);
+        _mongocrypt_buffer_steal_from_bson(&ectx->schema_old, &empty);
     }
 
     return true;
@@ -533,15 +533,20 @@ static bool _mongo_feed_collinfo(mongocrypt_ctx_t *ctx, mongocrypt_binary_t *in)
         return _mongocrypt_ctx_fail_w_msg(ctx, "BSON malformed");
     }
 
-    /* Cache the received collinfo. */
-    if (!_mongocrypt_cache_add_copy(&ctx->crypt->cache_collinfo, ectx->target_ns, &as_bson, ctx->status)) {
-        return _mongocrypt_ctx_fail(ctx);
-    }
+    if (ectx->use_schema_broker) {
+        if (!mc_schema_broker_satisfy_from_collinfo(ectx->sb, &as_bson, &ctx->crypt->cache_collinfo, ctx->status)) {
+            return _mongocrypt_ctx_fail(ctx);
+        }
+    } else {
+        /* Cache the received collinfo. */
+        if (!_mongocrypt_cache_add_copy(&ctx->crypt->cache_collinfo, ectx->target_ns, &as_bson, ctx->status)) {
+            return _mongocrypt_ctx_fail(ctx);
+        }
 
-    if (!_set_schema_from_collinfo(ctx, &as_bson)) {
-        return false;
+        if (!_set_schema_from_collinfo(ctx, &as_bson)) {
+            return false;
+        }
     }
-
     return true;
 }
 
@@ -553,19 +558,32 @@ static bool _mongo_done_collinfo(mongocrypt_ctx_t *ctx) {
     BSON_ASSERT_PARAM(ctx);
 
     ectx = (_mongocrypt_ctx_encrypt_t *)ctx;
-    if (_mongocrypt_buffer_empty(&ectx->schema)) {
-        bson_t empty_collinfo = BSON_INITIALIZER;
 
-        /* If no collinfo was fed, apply and cache an empty collinfo. */
-        if (!_set_schema_from_collinfo(ctx, &empty_collinfo)) {
-            bson_destroy(&empty_collinfo);
-            return false;
-        }
-        if (!_mongocrypt_cache_add_copy(&ctx->crypt->cache_collinfo, ectx->target_ns, &empty_collinfo, ctx->status)) {
-            bson_destroy(&empty_collinfo);
+    if (ectx->use_schema_broker) {
+        // If there are collections still needing schemas, assume no schema exists.
+        if (!mc_schema_broker_satisfy_remaining_with_empty_schemas(ectx->sb,
+                                                                   &ctx->crypt->cache_collinfo,
+                                                                   ctx->status)) {
             return _mongocrypt_ctx_fail(ctx);
         }
-        bson_destroy(&empty_collinfo);
+    } else {
+        if (_mongocrypt_buffer_empty(&ectx->schema_old)) {
+            bson_t empty_collinfo = BSON_INITIALIZER;
+
+            /* If no collinfo was fed, apply and cache an empty collinfo. */
+            if (!_set_schema_from_collinfo(ctx, &empty_collinfo)) {
+                bson_destroy(&empty_collinfo);
+                return false;
+            }
+            if (!_mongocrypt_cache_add_copy(&ctx->crypt->cache_collinfo,
+                                            ectx->target_ns,
+                                            &empty_collinfo,
+                                            ctx->status)) {
+                bson_destroy(&empty_collinfo);
+                return _mongocrypt_ctx_fail(ctx);
+            }
+            bson_destroy(&empty_collinfo);
+        }
     }
 
     if (!_fle2_collect_keys_for_compaction(ctx)) {
@@ -650,6 +668,26 @@ static bool _create_markings_cmd_bson(mongocrypt_ctx_t *ctx, bson_t *out) {
     BSON_ASSERT_PARAM(ctx);
     BSON_ASSERT_PARAM(out);
 
+    if (ectx->use_schema_broker) {
+        bson_t bson_view = BSON_INITIALIZER;
+        if (!_mongocrypt_buffer_to_bson(&ectx->original_cmd, &bson_view)) {
+            _mongocrypt_ctx_fail_w_msg(ctx, "invalid BSON cmd");
+            return false;
+        }
+        // If input command included $db, do not include it in the command to
+        // mongocryptd. Drivers are expected to append $db in the RunCommand helper
+        // used to send the command.
+        bson_copy_to_excluding_noinit(&bson_view, out, "$db", NULL);
+        if (!mc_schema_broker_append_csfleEncryptionSchemas(ectx->sb, out, ctx->status)) {
+            return _mongocrypt_ctx_fail(ctx);
+        }
+        if (!mc_schema_broker_append_encryptionInformation(ectx->sb, out, ctx->status)) {
+            return _mongocrypt_ctx_fail(ctx);
+        }
+
+        return true;
+    }
+
     if (context_uses_fle2(ctx)) {
         // Defer to FLE2 to generate the markings command
         return _fle2_mongo_op_markings(ctx, out);
@@ -670,9 +708,9 @@ static bool _create_markings_cmd_bson(mongocrypt_ctx_t *ctx, bson_t *out) {
     bson_init(out);
     bson_copy_to_excluding_noinit(&bson_view, out, "$db", NULL);
 
-    if (!_mongocrypt_buffer_empty(&ectx->schema)) {
+    if (!_mongocrypt_buffer_empty(&ectx->schema_old)) {
         // We have a schema buffer. View it as BSON:
-        if (!_mongocrypt_buffer_to_bson(&ectx->schema, &bson_view)) {
+        if (!_mongocrypt_buffer_to_bson(&ectx->schema_old, &bson_view)) {
             _mongocrypt_ctx_fail_w_msg(ctx, "invalid BSON schema");
             return false;
         }
@@ -1894,7 +1932,7 @@ static void _cleanup(mongocrypt_ctx_t *ctx) {
     bson_free(ectx->target_db);
     bson_free(ectx->target_coll);
     _mongocrypt_buffer_cleanup(&ectx->list_collections_filter);
-    _mongocrypt_buffer_cleanup(&ectx->schema);
+    _mongocrypt_buffer_cleanup(&ectx->schema_old);
     _mongocrypt_buffer_cleanup(&ectx->encrypted_field_config);
     _mongocrypt_buffer_cleanup(&ectx->original_cmd);
     _mongocrypt_buffer_cleanup(&ectx->mongocryptd_cmd);
@@ -1924,8 +1962,19 @@ static bool _try_schema_from_schema_map(mongocrypt_ctx_t *ctx) {
         return _mongocrypt_ctx_fail_w_msg(ctx, "malformed schema map");
     }
 
+    if (ectx->use_schema_broker) {
+        if (!mc_schema_broker_satisfy_from_schemaMap(ectx->sb, &schema_map, ctx->status)) {
+            return _mongocrypt_ctx_fail(ctx);
+        }
+        if (!mc_scheme_broker_need_more_schemas(ectx->sb)) {
+            // Have all needed schemas. Proceed to next state.
+            ctx->state = MONGOCRYPT_CTX_NEED_MONGO_MARKINGS;
+        }
+        return true;
+    }
+
     if (bson_iter_init_find(&iter, &schema_map, ectx->target_ns)) {
-        if (!_mongocrypt_buffer_copy_from_document_iter(&ectx->schema, &iter)) {
+        if (!_mongocrypt_buffer_copy_from_document_iter(&ectx->schema_old, &iter)) {
             return _mongocrypt_ctx_fail_w_msg(ctx, "malformed schema map");
         }
         ectx->used_local_schema = true;
@@ -1960,6 +2009,17 @@ static bool _fle2_try_encrypted_field_config_from_map(mongocrypt_ctx_t *ctx) {
         return _mongocrypt_ctx_fail_w_msg(ctx, "unable to convert encrypted_field_config_map to BSON");
     }
 
+    if (ectx->use_schema_broker) {
+        if (!mc_schema_broker_satisfy_from_encryptedFieldsMap(ectx->sb, &encrypted_field_config_map, ctx->status)) {
+            return _mongocrypt_ctx_fail(ctx);
+        }
+        if (!mc_scheme_broker_need_more_schemas(ectx->sb)) {
+            // Have all needed schemas. Proceed to next state.
+            ctx->state = MONGOCRYPT_CTX_NEED_MONGO_MARKINGS;
+        }
+        return true;
+    }
+
     if (bson_iter_init_find(&iter, &encrypted_field_config_map, ectx->target_ns)) {
         if (!_mongocrypt_buffer_copy_from_document_iter(&ectx->encrypted_field_config, &iter)) {
             return _mongocrypt_ctx_fail_w_msg(ctx,
@@ -1988,6 +2048,31 @@ static bool _try_schema_from_cache(mongocrypt_ctx_t *ctx) {
     BSON_ASSERT_PARAM(ctx);
 
     ectx = (_mongocrypt_ctx_encrypt_t *)ctx;
+
+    if (ectx->use_schema_broker) {
+        if (!mc_schema_broker_satisfy_from_cache(ectx->sb, &ctx->crypt->cache_collinfo, ctx->status)) {
+            return _mongocrypt_ctx_fail(ctx);
+        }
+        if (!mc_scheme_broker_need_more_schemas(ectx->sb)) {
+            // Have all needed schemas. Proceed to next state.
+            ctx->state = MONGOCRYPT_CTX_NEED_MONGO_MARKINGS;
+        } else {
+            // Request a listCollections command to check for remote schemas.
+            ctx->state = MONGOCRYPT_CTX_NEED_MONGO_COLLINFO;
+            if (ectx->target_db) {
+                if (!ctx->crypt->opts.use_need_mongo_collinfo_with_db_state) {
+                    _mongocrypt_ctx_fail_w_msg(
+                        ctx,
+                        "Fetching remote collection information on separate databases is not supported. Try "
+                        "upgrading driver, or specify a local schemaMap or encryptedFieldsMap.");
+                    return false;
+                }
+                // Target database differs from command database. Request collection info from target database.
+                ctx->state = MONGOCRYPT_CTX_NEED_MONGO_COLLINFO_WITH_DB;
+            }
+        }
+        return true;
+    }
 
     /* Otherwise, we need a remote schema. Check if we have a response to
      * listCollections cached. */
@@ -2039,8 +2124,20 @@ static bool _try_empty_schema_for_create(mongocrypt_ctx_t *ctx) {
         return true;
     }
 
+    if (ectx->use_schema_broker) {
+        if (!mc_schema_broker_satisfy_remaining_with_empty_schemas(ectx->sb,
+                                                                   &ctx->crypt->cache_collinfo,
+                                                                   ctx->status)) {
+            return _mongocrypt_ctx_fail(ctx);
+        }
+        BSON_ASSERT(!mc_scheme_broker_need_more_schemas(ectx->sb));
+        // Have all needed schemas. Proceed to next state.
+        ctx->state = MONGOCRYPT_CTX_NEED_MONGO_MARKINGS;
+        return true;
+    }
+
     bson_t empty = BSON_INITIALIZER;
-    _mongocrypt_buffer_steal_from_bson(&ectx->schema, &empty);
+    _mongocrypt_buffer_steal_from_bson(&ectx->schema_old, &empty);
     ctx->state = MONGOCRYPT_CTX_NEED_MONGO_MARKINGS;
     return true;
 }
@@ -2089,6 +2186,17 @@ static bool _try_schema_from_create_or_collMod_cmd(mongocrypt_ctx_t *ctx) {
         return false;
     }
 
+    if (ectx->use_schema_broker) {
+        if (!mc_schema_broker_satisfy_from_create_or_collMod(ectx->sb, &cmd_bson, ctx->status)) {
+            return _mongocrypt_ctx_fail(ctx);
+        }
+        if (!mc_scheme_broker_need_more_schemas(ectx->sb)) {
+            // Have all needed schemas. Proceed to next state.
+            ctx->state = MONGOCRYPT_CTX_NEED_MONGO_MARKINGS;
+        }
+        return true;
+    }
+
     if (!bson_iter_init(&iter, &cmd_bson)) {
         CLIENT_ERR("unable to iterate over command BSON");
         _mongocrypt_ctx_fail(ctx);
@@ -2096,7 +2204,7 @@ static bool _try_schema_from_create_or_collMod_cmd(mongocrypt_ctx_t *ctx) {
     }
 
     if (bson_iter_find_descendant(&iter, "validator.$jsonSchema", &iter)) {
-        if (!_mongocrypt_buffer_copy_from_document_iter(&ectx->schema, &iter)) {
+        if (!_mongocrypt_buffer_copy_from_document_iter(&ectx->schema_old, &iter)) {
             CLIENT_ERR("failed to parse BSON document from create validator.$jsonSchema");
             _mongocrypt_ctx_fail(ctx);
             return false;
@@ -2647,6 +2755,15 @@ bool mongocrypt_ctx_encrypt_init(mongocrypt_ctx_t *ctx, const char *db, int32_t 
     ctx->vtable.cleanup = _cleanup;
     ectx->bypass_query_analysis = ctx->crypt->opts.bypass_query_analysis;
     ectx->sb = mc_schema_broker_new();
+    {
+        const char *v = getenv("USE_SCHEMA_BROKER");
+        if (v && 0 == strcmp(v, "ON")) {
+            printf("Using experimental schema broker\n");
+            ectx->use_schema_broker = true;
+        } else {
+            printf("Using old behavior (no schema broker)\n");
+        }
+    }
 
     if (!cmd || !cmd->data) {
         return _mongocrypt_ctx_fail_w_msg(ctx, "invalid command");
@@ -2672,6 +2789,10 @@ bool mongocrypt_ctx_encrypt_init(mongocrypt_ctx_t *ctx, const char *db, int32_t 
         }
 
         ectx->target_ns = bson_strdup_printf("%s.%s", ectx->target_db, ectx->target_coll);
+
+        if (!mc_schema_broker_request(ectx->sb, ectx->target_db, ectx->target_coll, ctx->status)) {
+            return _mongocrypt_ctx_fail(ctx);
+        }
     } else {
         bool bypass;
         if (!_check_cmd_for_auto_encrypt(cmd, &bypass, &ectx->target_coll, ctx->status)) {
@@ -2690,6 +2811,9 @@ bool mongocrypt_ctx_encrypt_init(mongocrypt_ctx_t *ctx, const char *db, int32_t 
             return _mongocrypt_ctx_fail_w_msg(ctx, "unexpected error: did not bypass or error but no collection name");
         }
         ectx->target_ns = bson_strdup_printf("%s.%s", ectx->cmd_db, ectx->target_coll);
+        if (!mc_schema_broker_request(ectx->sb, ectx->cmd_db, ectx->target_coll, ctx->status)) {
+            return _mongocrypt_ctx_fail(ctx);
+        }
     }
 
     if (ctx->opts.kek.provider.aws.region || ctx->opts.kek.provider.aws.cmk) {
@@ -2757,50 +2881,98 @@ static bool mongocrypt_ctx_encrypt_ismaster_done(mongocrypt_ctx_t *ctx) {
         }
     }
 
-    /* Check if there is an encrypted field config in encrypted_field_config_map
-     */
-    if (!_fle2_try_encrypted_field_config_from_map(ctx)) {
-        return false;
-    }
-    if (_mongocrypt_buffer_empty(&ectx->encrypted_field_config)) {
-        if (!_try_schema_from_create_or_collMod_cmd(ctx)) {
+    if (ectx->use_schema_broker) {
+        if (!_fle2_try_encrypted_field_config_from_map(ctx)) {
             return false;
         }
-
-        /* Check if we have a local schema from schema_map */
-        if (_mongocrypt_buffer_empty(&ectx->schema)) {
-            if (!_try_schema_from_schema_map(ctx)) {
+        if (_mongocrypt_buffer_empty(&ectx->encrypted_field_config)) {
+            if (!_try_schema_from_create_or_collMod_cmd(ctx)) {
                 return false;
             }
-        }
 
-        /* If we didn't have a local schema, try the cache. */
-        if (_mongocrypt_buffer_empty(&ectx->schema)) {
-            if (!_try_schema_from_cache(ctx)) {
-                return false;
-            }
-        }
-
-        /* If we did not have a local or cached schema, check if this is a
-         * "create" command. If it is a "create" command, do not run
-         * "listCollections" to get a server-side schema. */
-        if (_mongocrypt_buffer_empty(&ectx->schema) && !_try_empty_schema_for_create(ctx)) {
-            return false;
-        }
-
-        /* Otherwise, we need the the driver to fetch the schema. */
-        if (_mongocrypt_buffer_empty(&ectx->schema)) {
-            ctx->state = MONGOCRYPT_CTX_NEED_MONGO_COLLINFO;
-            if (ectx->target_db) {
-                if (!ctx->crypt->opts.use_need_mongo_collinfo_with_db_state) {
-                    _mongocrypt_ctx_fail_w_msg(
-                        ctx,
-                        "Fetching remote collection information on separate databases is not supported. Try "
-                        "upgrading driver, or specify a local schemaMap or encryptedFieldsMap.");
+            /* Check if we have a local schema from schema_map */
+            if (mc_scheme_broker_need_more_schemas(ectx->sb)) {
+                if (!_try_schema_from_schema_map(ctx)) {
                     return false;
                 }
-                // Target database may differ from command database. Request collection info from target database.
-                ctx->state = MONGOCRYPT_CTX_NEED_MONGO_COLLINFO_WITH_DB;
+            }
+
+            /* If we didn't have a local schema, try the cache. */
+            if (mc_scheme_broker_need_more_schemas(ectx->sb)) {
+                if (!_try_schema_from_cache(ctx)) {
+                    return false;
+                }
+            }
+
+            /* If we did not have a local or cached schema, check if this is a
+             * "create" command. If it is a "create" command, do not run
+             * "listCollections" to get a server-side schema. */
+            if (mc_scheme_broker_need_more_schemas(ectx->sb) && !_try_empty_schema_for_create(ctx)) {
+                return false;
+            }
+
+            /* Otherwise, we need the the driver to fetch the schema. */
+            if (mc_scheme_broker_need_more_schemas(ectx->sb)) {
+                ctx->state = MONGOCRYPT_CTX_NEED_MONGO_COLLINFO;
+                if (ectx->target_db) {
+                    if (!ctx->crypt->opts.use_need_mongo_collinfo_with_db_state) {
+                        _mongocrypt_ctx_fail_w_msg(
+                            ctx,
+                            "Fetching remote collection information on separate databases is not supported. Try "
+                            "upgrading driver, or specify a local schemaMap or encryptedFieldsMap.");
+                        return false;
+                    }
+                    // Target database may differ from command database. Request collection info from target database.
+                    ctx->state = MONGOCRYPT_CTX_NEED_MONGO_COLLINFO_WITH_DB;
+                }
+            }
+        }
+    } else {
+        /* Check if there is an encrypted field config in encrypted_field_config_map
+         */
+        if (!_fle2_try_encrypted_field_config_from_map(ctx)) {
+            return false;
+        }
+        if (_mongocrypt_buffer_empty(&ectx->encrypted_field_config)) {
+            if (!_try_schema_from_create_or_collMod_cmd(ctx)) {
+                return false;
+            }
+
+            /* Check if we have a local schema from schema_map */
+            if (_mongocrypt_buffer_empty(&ectx->schema_old)) {
+                if (!_try_schema_from_schema_map(ctx)) {
+                    return false;
+                }
+            }
+
+            /* If we didn't have a local schema, try the cache. */
+            if (_mongocrypt_buffer_empty(&ectx->schema_old)) {
+                if (!_try_schema_from_cache(ctx)) {
+                    return false;
+                }
+            }
+
+            /* If we did not have a local or cached schema, check if this is a
+             * "create" command. If it is a "create" command, do not run
+             * "listCollections" to get a server-side schema. */
+            if (_mongocrypt_buffer_empty(&ectx->schema_old) && !_try_empty_schema_for_create(ctx)) {
+                return false;
+            }
+
+            /* Otherwise, we need the the driver to fetch the schema. */
+            if (_mongocrypt_buffer_empty(&ectx->schema_old)) {
+                ctx->state = MONGOCRYPT_CTX_NEED_MONGO_COLLINFO;
+                if (ectx->target_db) {
+                    if (!ctx->crypt->opts.use_need_mongo_collinfo_with_db_state) {
+                        _mongocrypt_ctx_fail_w_msg(
+                            ctx,
+                            "Fetching remote collection information on separate databases is not supported. Try "
+                            "upgrading driver, or specify a local schemaMap or encryptedFieldsMap.");
+                        return false;
+                    }
+                    // Target database may differ from command database. Request collection info from target database.
+                    ctx->state = MONGOCRYPT_CTX_NEED_MONGO_COLLINFO_WITH_DB;
+                }
             }
         }
     }

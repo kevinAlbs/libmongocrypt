@@ -160,8 +160,9 @@ typedef struct {
     char *target_coll;
 
     _mongocrypt_buffer_t list_collections_filter;
-    _mongocrypt_buffer_t schema;
+    _mongocrypt_buffer_t schema_old;
 
+    bool use_schema_broker; // temporary flag to opt-in to using the new schema broker.
     mc_schema_broker_t *sb;
     /* TODO CDRIVER-3150: audit + rename these buffers.
      * original_cmd for explicit is {v: <BSON value>}, for auto is the command to
