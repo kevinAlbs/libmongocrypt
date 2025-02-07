@@ -379,6 +379,13 @@ static inline bool mc_schema_broker_satisfy_from_collinfo(mc_schema_broker_t *sb
         coll = bson_iter_utf8(&name_iter, NULL);
     }
 
+    bson_iter_t type_iter = collinfo_iter;
+    if (bson_iter_find(&type_iter, "type") && BSON_ITER_HOLDS_UTF8(&type_iter)
+        && 0 == strcmp("view", bson_iter_utf8(&type_iter, NULL))) {
+        CLIENT_ERR("cannot auto encrypt a view: %s.%s", sb->db, coll);
+        return false;
+    }
+
     // Cache the received collinfo.
     {
         char *ns = bson_strdup_printf("%s.%s", sb->db, coll);

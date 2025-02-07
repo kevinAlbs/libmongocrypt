@@ -225,6 +225,24 @@ static void test_mc_schema_broker_satisfy_from_collInfo(_mongocrypt_tester_t *te
         mc_schema_broker_destroy(sb);
         mongocrypt_status_destroy(status);
     }
+
+    // Errors if attempting to satisfy with a view.
+    {
+        mongocrypt_status_t *status = mongocrypt_status_new();
+        mc_schema_broker_t *sb = mc_schema_broker_new();
+        _mongocrypt_cache_t cache;
+        _mongocrypt_cache_collinfo_init(&cache);
+
+        bson_t *collinfo_view = TEST_FILE_AS_BSON("./test/data/collection-info-view.json");
+
+        ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "coll", status), status);
+        ASSERT_FAILS_STATUS(mc_schema_broker_satisfy_from_collinfo(sb, collinfo_view, &cache, status),
+                            status,
+                            "cannot auto encrypt a view");
+        _mongocrypt_cache_cleanup(&cache);
+        mc_schema_broker_destroy(sb);
+        mongocrypt_status_destroy(status);
+    }
 }
 
 static void test_mc_schema_broker_satisfy_from_cache(_mongocrypt_tester_t *tester) {
