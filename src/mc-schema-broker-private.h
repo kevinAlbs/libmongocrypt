@@ -197,8 +197,10 @@ static inline void append_encryptedFields(const bson_t *encryptedFields, const c
     }
 }
 
-static inline bool
-mc_schema_broker_append_encryptionInformation(const mc_schema_broker_t *sb, bson_t *out, mongocrypt_status_t *status) {
+static inline bool mc_schema_broker_append_encryptionInformation(const mc_schema_broker_t *sb,
+                                                                 const char *cmd_name,
+                                                                 bson_t *out,
+                                                                 mongocrypt_status_t *status) {
     BSON_ASSERT_PARAM(sb);
     BSON_ASSERT_PARAM(out);
 
@@ -229,8 +231,13 @@ mc_schema_broker_append_encryptionInformation(const mc_schema_broker_t *sb, bson
             }
         }
     } else {
-        // Not needed.
-        return true;
+        if (0 == strcmp("bulkWrite", cmd_name)) {
+            // If this is a bulkWrite command, proceed to apply empty encryptionInformation.
+        } else {
+            // Otherwise, do not append `encryptionInformation`. `mc_schema_broker_append_csfleEncryptionSchemas` will
+            // add an empty `jsonSchema`.
+            return true;
+        }
     }
 
     bson_t encryption_information_bson;
@@ -244,8 +251,21 @@ mc_schema_broker_append_encryptionInformation(const mc_schema_broker_t *sb, bson
         BSON_ASSERT(se->satisfied);
         char *ns = bson_strdup_printf("%s.%s", sb->db, se->coll);
         if (!se->encryptedFields.set) {
-            bson_t empty = BSON_INITIALIZER;
-            BSON_ASSERT(BSON_APPEND_DOCUMENT(&schema_bson, ns, &empty));
+            bson_t empty_encryptedFields = BSON_INITIALIZER;
+            {
+                char *escCollection = bson_strdup_printf("enxcol_.%s.esc", se->coll);
+                char *ecocCollection = bson_strdup_printf("enxcol_.%s.ecoc", se->coll);
+                bson_t empty_array = BSON_INITIALIZER;
+                bool ok = true;
+                ok = ok && BSON_APPEND_UTF8(&empty_encryptedFields, "escCollection", escCollection);
+                ok = ok && BSON_APPEND_UTF8(&empty_encryptedFields, "ecocCollection", ecocCollection);
+                ok = ok && BSON_APPEND_ARRAY(&empty_encryptedFields, "fields", &empty_array);
+                bson_destroy(&empty_array);
+                bson_free(escCollection);
+                bson_free(ecocCollection);
+                BSON_ASSERT(ok);
+            }
+            BSON_ASSERT(BSON_APPEND_DOCUMENT(&schema_bson, ns, &empty_encryptedFields));
         } else {
             bson_t ns_to_schema_bson;
             BSON_ASSERT(BSON_APPEND_DOCUMENT_BEGIN(&schema_bson, ns, &ns_to_schema_bson));
@@ -590,10 +610,18 @@ static inline bool mc_schema_broker_satisfy_remaining_with_empty_schemas(mc_sche
 // mc_schema_broker_append_csfleEncryptionSchemas appends schema information to send to QA.
 // For only one JSON schema, use `jsonSchema` for backwards compatibility.
 // For multiple JSON schemas, use `csfleEncryptionSchemas` (added in server 8.2).
-static inline bool
-mc_schema_broker_append_csfleEncryptionSchemas(mc_schema_broker_t *sb, bson_t *out, mongocrypt_status_t *status) {
+static inline bool mc_schema_broker_append_csfleEncryptionSchemas(mc_schema_broker_t *sb,
+                                                                  const char *cmd_name,
+                                                                  bson_t *out,
+                                                                  mongocrypt_status_t *status) {
     BSON_ASSERT_PARAM(sb);
     BSON_ASSERT_PARAM(out);
+
+    if (0 == strcmp("bulkWrite", cmd_name)) {
+        // bulkWrite does not support CSFLE.
+        // If there is no schema, an empty QE schema is added by `mc_schema_broker_append_encryptionInformation`.
+        return true;
+    }
 
     // Check if any collection has encryptedFields.
     bool has_encryptedFields = false;

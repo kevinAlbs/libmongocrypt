@@ -678,10 +678,10 @@ static bool _create_markings_cmd_bson(mongocrypt_ctx_t *ctx, bson_t *out) {
         // mongocryptd. Drivers are expected to append $db in the RunCommand helper
         // used to send the command.
         bson_copy_to_excluding_noinit(&bson_view, out, "$db", NULL);
-        if (!mc_schema_broker_append_csfleEncryptionSchemas(ectx->sb, out, ctx->status)) {
+        if (!mc_schema_broker_append_csfleEncryptionSchemas(ectx->sb, ectx->cmd_name, out, ctx->status)) {
             return _mongocrypt_ctx_fail(ctx);
         }
-        if (!mc_schema_broker_append_encryptionInformation(ectx->sb, out, ctx->status)) {
+        if (!mc_schema_broker_append_encryptionInformation(ectx->sb, ectx->cmd_name, out, ctx->status)) {
             return _mongocrypt_ctx_fail(ctx);
         }
 
