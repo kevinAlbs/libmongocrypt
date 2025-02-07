@@ -343,6 +343,7 @@ static inline bool mc_schema_entry_satisfy_from_collinfo(mc_schema_entry_t *se,
                 found_jsonSchema = true;
             } else {
                 se->jsonSchema.has_siblings = true;
+                break;
             }
             BSON_ASSERT(!se->jsonSchema.set);
             se->jsonSchema.set = true;

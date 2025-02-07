@@ -243,6 +243,33 @@ static void test_mc_schema_broker_satisfy_from_collInfo(_mongocrypt_tester_t *te
         mc_schema_broker_destroy(sb);
         mongocrypt_status_destroy(status);
     }
+
+    // Accepts a collinfo with siblings, like: {"$jsonSchema": {...}, "sibling": {...}}
+    {
+        mongocrypt_status_t *status = mongocrypt_status_new();
+        mc_schema_broker_t *sb = mc_schema_broker_new();
+        _mongocrypt_cache_t cache;
+        _mongocrypt_cache_collinfo_init(&cache);
+
+        bson_t *collinfo_siblings = TEST_FILE_AS_BSON("./test/data/collinfo-siblings.json");
+
+        ASSERT_OK_STATUS(mc_schema_broker_request(sb, "test", "test", status), status);
+        ASSERT(mc_scheme_broker_need_more_schemas(sb));
+        ASSERT_OK_STATUS(mc_schema_broker_satisfy_from_collinfo(sb, collinfo_siblings, &cache, status), status);
+        ASSERT(!mc_scheme_broker_need_more_schemas(sb));
+
+        // Check that collinfo is cached.
+        {
+            bson_t *cached_collinfo;
+            ASSERT(_mongocrypt_cache_get(&cache, "test.test", (void **)&cached_collinfo));
+            ASSERT(cached_collinfo);
+            ASSERT_EQUAL_BSON(collinfo_siblings, cached_collinfo);
+            bson_destroy(cached_collinfo);
+        }
+        _mongocrypt_cache_cleanup(&cache);
+        mc_schema_broker_destroy(sb);
+        mongocrypt_status_destroy(status);
+    }
 }
 
 static void test_mc_schema_broker_satisfy_from_cache(_mongocrypt_tester_t *tester) {
