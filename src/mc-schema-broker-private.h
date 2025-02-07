@@ -526,12 +526,17 @@ static inline bool mc_schema_broker_satisfy_from_cache(mc_schema_broker_t *sb,
             goto loop_fail;
         }
 
+        if (!collinfo) {
+            goto loop_skip;
+        }
+
         if (!mc_schema_entry_satisfy_from_collinfo(it, collinfo, sb->db, it->coll, status)) {
             bson_destroy(collinfo);
             bson_free(ns);
             goto loop_fail;
         }
 
+    loop_skip:
         loop_ok = true;
     loop_fail:
         bson_destroy(collinfo);
