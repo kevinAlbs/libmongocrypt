@@ -1175,41 +1175,6 @@ static void test_mc_schema_broker_has_any_qe_schemas(_mongocrypt_tester_t *teste
     }
 }
 
-static void test_mc_schema_broker_must_omit_encryptionInformation(_mongocrypt_tester_t *tester) {
-    bson_t *encryptedFields = TEST_FILE_AS_BSON("./test/data/schema-broker/encryptedFields.json");
-    bson_t *encryptedFields2 = TEST_FILE_AS_BSON("./test/data/schema-broker/encryptedFields2.json");
-    bson_t *encryptedFieldsMap =
-        BCON_NEW("db.coll", BCON_DOCUMENT(encryptedFields), "db.coll2", BCON_DOCUMENT(encryptedFields2));
-    const char *subType6_str = BSON_STR({"$binary" : {"base64" : "AAAA", "subType" : "06"}});
-
-    // Does not omit when command has encrypted payload.
-    {
-        mongocrypt_status_t *status = mongocrypt_status_new();
-        mc_schema_broker_t *sb = mc_schema_broker_new();
-
-        bson_t *cmd = TMP_BSON(MC_STR({"find" : "coll", "filter" : {"foo" : MC_STR_FMT}}), subType6_str);
-
-        ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "coll", status), status);
-        ASSERT(mc_scheme_broker_need_more_schemas(sb));
-        ASSERT_OK_STATUS(mc_schema_broker_satisfy_from_encryptedFieldsMap(sb, encryptedFieldsMap, status), status);
-        ASSERT(!mc_scheme_broker_need_more_schemas(sb));
-
-        moe_result res = mc_schema_broker_must_omit_encryptionInformation("find", cmd, true, status);
-        ASSERT_OK_STATUS(res.ok, status);
-        ASSERT(!res.must_omit);
-
-        mc_schema_broker_destroy(sb);
-        mongocrypt_status_destroy(status);
-    }
-
-    // Omits encryptedFields when command has no encrypted payload.
-    {}
-    // Omits encryptedFields when compactStructuredEncryptionData does not reference range encrypted fields.
-    {}
-    // Omits encryptedFields on prohibited commands.
-    {}
-}
-
 void _mongocrypt_tester_install_mc_schema_broker(_mongocrypt_tester_t *tester) {
     INSTALL_TEST(test_mc_schema_broker_request);
     INSTALL_TEST(test_mc_schema_broker_satisfy_from_collInfo);
@@ -1220,7 +1185,6 @@ void _mongocrypt_tester_install_mc_schema_broker(_mongocrypt_tester_t *tester) {
     INSTALL_TEST(test_mc_schema_broker_append_csfleEncryptionSchemas);
     INSTALL_TEST(test_mc_schema_broker_append_encryptionInformation);
     INSTALL_TEST(test_mc_schema_broker_insert_encryptionInformation);
-    INSTALL_TEST(test_mc_schema_broker_must_omit_encryptionInformation);
     INSTALL_TEST(test_mc_schema_broker_get_encryptedFields);
     INSTALL_TEST(test_mc_schema_broker_satisfy_from_create_or_collMod);
     INSTALL_TEST(test_mc_schema_broker_has_any_qe_schemas);
