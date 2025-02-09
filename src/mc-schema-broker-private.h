@@ -943,6 +943,7 @@ static inline bool mc_schema_broker_satisfy_from_create_or_collMod(mc_schema_bro
         }
 
         found->jsonSchema.set = true;
+        found->jsonSchema.is_remote = true; // Mark remote. Schema may have non-CSFLE validators.
         found->satisfied = true;
         return true;
     }
