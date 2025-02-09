@@ -951,27 +951,6 @@ static inline bool mc_schema_broker_satisfy_from_create_or_collMod(mc_schema_bro
     return true;
 }
 
-typedef struct {
-    bool must_omit;
-    bool ok;
-} moe_result;
-
-static inline moe_result mc_schema_broker_must_omit_encryptionInformation(const char *command_name,
-                                                                          const bson_t *command,
-                                                                          bool use_range_v2,
-                                                                          mongocrypt_status_t *status) {
-    CLIENT_ERR("must_omit_encryptionInformation is not-yet implemented");
-    return (moe_result){.ok = false};
-}
-
-static inline bool mc_schema_broker_must_ignore_encryptionInformation(const mc_schema_broker_t *sb,
-                                                                      const bson_t *cmd,
-                                                                      mc_cmd_target_t cmd_target,
-                                                                      mongocrypt_status_t *status) {
-    CLIENT_ERR("mc_schema_broker_apply_schemas_to_cmd is not-yet implemented");
-    return false;
-}
-
 // TODO: consider putting mc_schema_broker_insert_encryptionInformation and
 // mc_schema_broker_append_csfleEncryptionSchemas behind a common interface: mc_schema_broker_apply_schemas_to_cmd
 static inline bool mc_schema_broker_apply_schemas_to_cmd(const mc_schema_broker_t *sb,
