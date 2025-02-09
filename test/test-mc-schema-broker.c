@@ -902,6 +902,177 @@ static void test_mc_schema_broker_append_encryptionInformation(_mongocrypt_teste
     bson_destroy(encryptedFieldsMap);
 }
 
+#define MC_STR_(...) #__VA_ARGS__
+// MC_STR stringifies arguments after macro expansion.
+// Useful to define JSON literals with %s formatters.
+// Use MC_STR_FMT to add a `%s` without clang-format formatting as `% s`.
+#define MC_STR(...) MC_STR_(__VA_ARGS__)
+
+// clang-format off
+#define MC_STR_FMT %s
+// clang-format on
+
+static void test_mc_schema_broker_insert_encryptionInformation(_mongocrypt_tester_t *tester) {
+    bson_t *encryptedFields = TEST_FILE_AS_BSON("./test/data/schema-broker/encryptedFields.json");
+    char *encryptedFields_str = bson_as_canonical_extended_json(encryptedFields, NULL);
+    bson_t *encryptedFields2 = TEST_FILE_AS_BSON("./test/data/schema-broker/encryptedFields2.json");
+    char *encryptedFields2_str = bson_as_canonical_extended_json(encryptedFields2, NULL);
+    bson_t *encryptedFieldsMap =
+        BCON_NEW("db.coll", BCON_DOCUMENT(encryptedFields), "db.coll2", BCON_DOCUMENT(encryptedFields2));
+    bson_t *schemaMap = TEST_FILE_AS_BSON("./test/data/schema-broker/schemaMap.json");
+
+    // Inserts one QE schema with `encryptionInformation`.
+    {
+        mongocrypt_status_t *status = mongocrypt_status_new();
+        mc_schema_broker_t *sb = mc_schema_broker_new();
+
+        bson_t *cmd = TMP_BSON(MC_STR({"find" : "coll"}));
+
+        ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "coll", status), status);
+        ASSERT(mc_scheme_broker_need_more_schemas(sb));
+        ASSERT_OK_STATUS(mc_schema_broker_satisfy_from_encryptedFieldsMap(sb, encryptedFieldsMap, status), status);
+        ASSERT(!mc_scheme_broker_need_more_schemas(sb));
+
+        ASSERT_OK_STATUS(mc_schema_broker_insert_encryptionInformation(sb, "find", cmd, MC_TO_MONGOD, status), status);
+        bson_t *expect = TMP_BSON(
+            MC_STR({"find" : "coll", "encryptionInformation" : {"type" : 1, "schema" : {"db.coll" : MC_STR_FMT}}}),
+            encryptedFields_str);
+        ASSERT_EQUAL_BSON(expect, cmd);
+
+        mc_schema_broker_destroy(sb);
+        mongocrypt_status_destroy(status);
+    }
+
+    // Inserts multiple QE schemas with `encryptionInformation`.
+    {
+        mongocrypt_status_t *status = mongocrypt_status_new();
+        mc_schema_broker_t *sb = mc_schema_broker_new();
+
+        bson_t *cmd = TMP_BSON(MC_STR({"find" : "coll"}));
+
+        ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "coll", status), status);
+        ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "coll2", status), status);
+        ASSERT(mc_scheme_broker_need_more_schemas(sb));
+        ASSERT_OK_STATUS(mc_schema_broker_satisfy_from_encryptedFieldsMap(sb, encryptedFieldsMap, status), status);
+        ASSERT(!mc_scheme_broker_need_more_schemas(sb));
+
+        ASSERT_OK_STATUS(mc_schema_broker_insert_encryptionInformation(sb, "find", cmd, MC_TO_MONGOD, status), status);
+        bson_t *expect = TMP_BSON(
+            MC_STR({
+                "find" : "coll",
+                "encryptionInformation" : {"type" : 1, "schema" : {"db.coll" : MC_STR_FMT, "db.coll2" : MC_STR_FMT}}
+            }),
+            encryptedFields_str,
+            encryptedFields2_str);
+        ASSERT_EQUAL_BSON(expect, cmd);
+
+        mc_schema_broker_destroy(sb);
+        mongocrypt_status_destroy(status);
+    }
+
+    // Does not insert when no collections have QE schemas.
+    {
+        mongocrypt_status_t *status = mongocrypt_status_new();
+        mc_schema_broker_t *sb = mc_schema_broker_new();
+
+        bson_t *cmd = TMP_BSON(MC_STR({"find" : "coll"}));
+
+        ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "coll", status), status);
+        ASSERT(mc_scheme_broker_need_more_schemas(sb));
+        ASSERT_OK_STATUS(mc_schema_broker_satisfy_from_schemaMap(sb, schemaMap, status), status);
+        ASSERT(!mc_scheme_broker_need_more_schemas(sb));
+
+        ASSERT_OK_STATUS(mc_schema_broker_insert_encryptionInformation(sb, "find", cmd, MC_TO_MONGOD, status), status);
+        bson_t *expect = TMP_BSON(MC_STR({"find" : "coll"}), encryptedFields_str);
+        ASSERT_EQUAL_BSON(expect, cmd);
+
+        mc_schema_broker_destroy(sb);
+        mongocrypt_status_destroy(status);
+    }
+
+    // Inserts into nsInfo for bulkWrite.
+    {
+        mongocrypt_status_t *status = mongocrypt_status_new();
+        mc_schema_broker_t *sb = mc_schema_broker_new();
+
+        bson_t *cmd = TMP_BSON(MC_STR({"bulkWrite" : "coll", "nsInfo" : [ {"ns" : "db.coll"} ]}));
+
+        ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "coll", status), status);
+        ASSERT(mc_scheme_broker_need_more_schemas(sb));
+        ASSERT_OK_STATUS(mc_schema_broker_satisfy_from_encryptedFieldsMap(sb, encryptedFieldsMap, status), status);
+        ASSERT(!mc_scheme_broker_need_more_schemas(sb));
+
+        ASSERT_OK_STATUS(mc_schema_broker_insert_encryptionInformation(sb, "bulkWrite", cmd, MC_TO_MONGOD, status),
+                         status);
+        bson_t *expect = TMP_BSON(
+            MC_STR({
+                "bulkWrite" : "coll",
+                "nsInfo" :
+                    [ {"ns" : "db.coll", "encryptionInformation" : {"type" : 1, "schema" : {"db.coll" : MC_STR_FMT}}} ]
+            }),
+            encryptedFields_str);
+        ASSERT_EQUAL_BSON(expect, cmd);
+
+        mc_schema_broker_destroy(sb);
+        mongocrypt_status_destroy(status);
+    }
+
+    // Inserts at top-level for "explain" to mongocryptd.
+    {
+        mongocrypt_status_t *status = mongocrypt_status_new();
+        mc_schema_broker_t *sb = mc_schema_broker_new();
+
+        bson_t *cmd = TMP_BSON(MC_STR({"explain" : {"find" : "coll"}}));
+
+        ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "coll", status), status);
+        ASSERT(mc_scheme_broker_need_more_schemas(sb));
+        ASSERT_OK_STATUS(mc_schema_broker_satisfy_from_encryptedFieldsMap(sb, encryptedFieldsMap, status), status);
+        ASSERT(!mc_scheme_broker_need_more_schemas(sb));
+
+        ASSERT_OK_STATUS(mc_schema_broker_insert_encryptionInformation(sb, "explain", cmd, MC_TO_MONGOCRYPTD, status),
+                         status);
+        bson_t *expect = TMP_BSON(MC_STR({
+                                      "explain" : {"find" : "coll"},
+                                      "encryptionInformation" : {"type" : 1, "schema" : {"db.coll" : MC_STR_FMT}}
+                                  }),
+                                  encryptedFields_str);
+        ASSERT_EQUAL_BSON(expect, cmd);
+
+        mc_schema_broker_destroy(sb);
+        mongocrypt_status_destroy(status);
+    }
+
+    // Inserts nested in "explain" for mongod.
+    {
+        mongocrypt_status_t *status = mongocrypt_status_new();
+        mc_schema_broker_t *sb = mc_schema_broker_new();
+
+        bson_t *cmd = TMP_BSON(MC_STR({"explain" : {"find" : "coll"}}));
+
+        ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "coll", status), status);
+        ASSERT(mc_scheme_broker_need_more_schemas(sb));
+        ASSERT_OK_STATUS(mc_schema_broker_satisfy_from_encryptedFieldsMap(sb, encryptedFieldsMap, status), status);
+        ASSERT(!mc_scheme_broker_need_more_schemas(sb));
+
+        ASSERT_OK_STATUS(mc_schema_broker_insert_encryptionInformation(sb, "explain", cmd, MC_TO_MONGOD, status),
+                         status);
+        bson_t *expect = TMP_BSON(
+            MC_STR({
+                "explain" :
+                    {"find" : "coll", "encryptionInformation" : {"type" : 1, "schema" : {"db.coll" : MC_STR_FMT}}}
+            }),
+            encryptedFields_str);
+        ASSERT_EQUAL_BSON(expect, cmd);
+
+        mc_schema_broker_destroy(sb);
+        mongocrypt_status_destroy(status);
+    }
+
+    bson_free(encryptedFields2_str);
+    bson_free(encryptedFields_str);
+    bson_destroy(encryptedFieldsMap);
+}
+
 static void test_mc_schema_broker_get_encryptedFields(_mongocrypt_tester_t *tester) {
     bson_t *encryptedFieldsMap = TEST_FILE_AS_BSON("./test/data/schema-broker/encryptedFieldsMap.json");
 
@@ -986,6 +1157,59 @@ static void test_mc_schema_broker_satisfy_from_create_or_collMod(_mongocrypt_tes
     }
 }
 
+static void test_mc_schema_broker_has_any_qe_schemas(_mongocrypt_tester_t *tester) {
+    bson_t *encryptedFieldsMap = TEST_FILE_AS_BSON("./test/data/schema-broker/encryptedFieldsMap.json");
+
+    // Works.
+    {
+        mongocrypt_status_t *status = mongocrypt_status_new();
+        mc_schema_broker_t *sb = mc_schema_broker_new();
+
+        ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "coll", status), status);
+        ASSERT(!mc_schema_broker_has_any_qe_schemas(sb));
+        ASSERT_OK_STATUS(mc_schema_broker_satisfy_from_encryptedFieldsMap(sb, encryptedFieldsMap, status), status);
+        ASSERT(mc_schema_broker_has_any_qe_schemas(sb));
+
+        mc_schema_broker_destroy(sb);
+        mongocrypt_status_destroy(status);
+    }
+}
+
+static void test_mc_schema_broker_must_omit_encryptionInformation(_mongocrypt_tester_t *tester) {
+    bson_t *encryptedFields = TEST_FILE_AS_BSON("./test/data/schema-broker/encryptedFields.json");
+    bson_t *encryptedFields2 = TEST_FILE_AS_BSON("./test/data/schema-broker/encryptedFields2.json");
+    bson_t *encryptedFieldsMap =
+        BCON_NEW("db.coll", BCON_DOCUMENT(encryptedFields), "db.coll2", BCON_DOCUMENT(encryptedFields2));
+    const char *subType6_str = BSON_STR({"$binary" : {"base64" : "AAAA", "subType" : "06"}});
+
+    // Does not omit when command has encrypted payload.
+    {
+        mongocrypt_status_t *status = mongocrypt_status_new();
+        mc_schema_broker_t *sb = mc_schema_broker_new();
+
+        bson_t *cmd = TMP_BSON(MC_STR({"find" : "coll", "filter" : {"foo" : MC_STR_FMT}}), subType6_str);
+
+        ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "coll", status), status);
+        ASSERT(mc_scheme_broker_need_more_schemas(sb));
+        ASSERT_OK_STATUS(mc_schema_broker_satisfy_from_encryptedFieldsMap(sb, encryptedFieldsMap, status), status);
+        ASSERT(!mc_scheme_broker_need_more_schemas(sb));
+
+        moe_result res = mc_schema_broker_must_omit_encryptionInformation("find", cmd, true, status);
+        ASSERT_OK_STATUS(res.ok, status);
+        ASSERT(!res.must_omit);
+
+        mc_schema_broker_destroy(sb);
+        mongocrypt_status_destroy(status);
+    }
+
+    // Omits encryptedFields when command has no encrypted payload.
+    {}
+    // Omits encryptedFields when compactStructuredEncryptionData does not reference range encrypted fields.
+    {}
+    // Omits encryptedFields on prohibited commands.
+    {}
+}
+
 void _mongocrypt_tester_install_mc_schema_broker(_mongocrypt_tester_t *tester) {
     INSTALL_TEST(test_mc_schema_broker_request);
     INSTALL_TEST(test_mc_schema_broker_satisfy_from_collInfo);
@@ -995,6 +1219,9 @@ void _mongocrypt_tester_install_mc_schema_broker(_mongocrypt_tester_t *tester) {
     INSTALL_TEST(test_mc_schema_broker_satisfy_remaining_with_empty_schemas);
     INSTALL_TEST(test_mc_schema_broker_append_csfleEncryptionSchemas);
     INSTALL_TEST(test_mc_schema_broker_append_encryptionInformation);
+    INSTALL_TEST(test_mc_schema_broker_insert_encryptionInformation);
+    INSTALL_TEST(test_mc_schema_broker_must_omit_encryptionInformation);
     INSTALL_TEST(test_mc_schema_broker_get_encryptedFields);
     INSTALL_TEST(test_mc_schema_broker_satisfy_from_create_or_collMod);
+    INSTALL_TEST(test_mc_schema_broker_has_any_qe_schemas);
 }
