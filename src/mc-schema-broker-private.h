@@ -217,38 +217,40 @@ static inline bool mc_schema_broker_append_encryptionInformation(const mc_schema
 
     // Check if any collection has encryptedFields.
     bool has_encryptedFields = false;
+    bool has_jsonSchema = false;
     const char *coll_with_encryptedFields = NULL;
+    const char *coll_with_jsonSchema = NULL;
     for (mc_schema_entry_t *it = sb->ll; it != NULL; it = it->next) {
         BSON_ASSERT(it->satisfied);
         if (it->encryptedFields.set) {
             has_encryptedFields = true;
             coll_with_encryptedFields = it->coll;
-            break;
+        } else if (it->jsonSchema.set) {
+            has_jsonSchema = true;
+            coll_with_jsonSchema = it->coll;
         }
     }
 
-    if (has_encryptedFields) {
+    if (has_encryptedFields && has_jsonSchema) {
         // If any collection has encryptedFields, error if any collection only has a JSON Schema.
-        for (mc_schema_entry_t *it = sb->ll; it != NULL; it = it->next) {
-            BSON_ASSERT(it->satisfied);
-            if (!it->encryptedFields.set && it->jsonSchema.set) {
-                const char *coll_with_jsonSchema = it->coll;
-                CLIENT_ERR("Collection '%s' has encryptedFields but collection '%s' has a JSON schema configured. To "
-                           "ignore the JSON schema, add '%s' to encryptedFieldsMap.",
-                           coll_with_encryptedFields,
-                           coll_with_jsonSchema,
-                           coll_with_jsonSchema);
-                return false;
-            }
-        }
-    } else {
-        if (0 == strcmp("bulkWrite", cmd_name)) {
-            // If this is a bulkWrite command, proceed to apply empty encryptionInformation.
-        } else {
-            // Otherwise, do not append `encryptionInformation`. `mc_schema_broker_append_csfleEncryptionSchemas` will
-            // add an empty `jsonSchema`.
-            return true;
-        }
+        CLIENT_ERR("Collection '%s' has encryptedFields but collection '%s' has a JSON schema configured. To "
+                   "ignore the JSON schema, add '%s' to encryptedFieldsMap.",
+                   coll_with_encryptedFields,
+                   coll_with_jsonSchema,
+                   coll_with_jsonSchema);
+        return false;
+    }
+
+    if (!has_encryptedFields && has_jsonSchema) {
+        // No collection has encryptedFields, but some collection has a jsonSchema.
+        // Apply jsonSchemas later in `mc_schema_broker_append_csfleEncryptionSchemas`.
+        return true;
+    }
+
+    if (!has_encryptedFields && !has_jsonSchema && 0 != strcmp("bulkWrite", cmd_name)) {
+        // No collection has encryptedFields or jsonSchema. Return to add an empty `jsonSchema` later.
+        // bulkWrite only supports encryptedFields. For other commands, apply an empty `jsonSchema` later.
+        return true;
     }
 
     bson_t encryption_information_bson;
@@ -778,12 +780,6 @@ static inline bool mc_schema_broker_append_csfleEncryptionSchemas(mc_schema_brok
     BSON_ASSERT_PARAM(sb);
     BSON_ASSERT_PARAM(out);
 
-    if (0 == strcmp("bulkWrite", cmd_name)) {
-        // bulkWrite does not support CSFLE.
-        // If there is no schema, an empty QE schema is added by `mc_schema_broker_append_encryptionInformation`.
-        return true;
-    }
-
     // Check if any collection has encryptedFields.
     bool has_encryptedFields = false;
     const char *coll_with_encryptedFields = NULL;
@@ -814,6 +810,10 @@ static inline bool mc_schema_broker_append_csfleEncryptionSchemas(mc_schema_brok
         return true;
     }
 
+    // bulkWrite does not support CSFLE.
+    // If there is no schema, an empty QE schema is added by `mc_schema_broker_append_encryptionInformation`.
+    bool skip_empty_jsonSchema = (0 == strcmp("bulkWrite", cmd_name));
+
     if (sb->ll_len == 1) {
         // Append the only jsonSchema with the "jsonSchema" field.
         mc_schema_entry_t *se = sb->ll;
@@ -823,7 +823,7 @@ static inline bool mc_schema_broker_append_csfleEncryptionSchemas(mc_schema_brok
         if (se->jsonSchema.set) {
             BSON_ASSERT(BSON_APPEND_DOCUMENT(out, "jsonSchema", &se->jsonSchema.bson));
             BSON_ASSERT(BSON_APPEND_BOOL(out, "isRemoteSchema", se->jsonSchema.is_remote));
-        } else {
+        } else if (!skip_empty_jsonSchema) {
             bson_t empty = BSON_INITIALIZER;
             BSON_ASSERT(BSON_APPEND_DOCUMENT(out, "jsonSchema", &empty));
             BSON_ASSERT(BSON_APPEND_BOOL(out, "isRemoteSchema", false));
