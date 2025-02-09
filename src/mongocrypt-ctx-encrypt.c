@@ -139,8 +139,6 @@ static bool _fle2_append_encryptionInformation(const mongocrypt_ctx_t *ctx,
     return true;
 }
 
-typedef enum { MC_TO_CSFLE, MC_TO_MONGOCRYPTD, MC_TO_MONGOD } mc_cmd_target_t;
-
 /**
  * @brief Add "encryptionInformation" to a command.
  *
@@ -358,14 +356,14 @@ static bool _set_schema_from_collinfo(mongocrypt_ctx_t *ctx, bson_t *collinfo) {
         if (!BSON_ITER_HOLDS_DOCUMENT(&iter)) {
             return _mongocrypt_ctx_fail_w_msg(ctx, "options.encryptedFields is not a BSON document");
         }
-        if (!_mongocrypt_buffer_copy_from_document_iter(&ectx->encrypted_field_config, &iter)) {
+        if (!_mongocrypt_buffer_copy_from_document_iter(&ectx->encrypted_field_config_old, &iter)) {
             return _mongocrypt_ctx_fail_w_msg(ctx, "unable to copy options.encryptedFields");
         }
         bson_t efc_bson;
-        if (!_mongocrypt_buffer_to_bson(&ectx->encrypted_field_config, &efc_bson)) {
+        if (!_mongocrypt_buffer_to_bson(&ectx->encrypted_field_config_old, &efc_bson)) {
             return _mongocrypt_ctx_fail_w_msg(ctx, "unable to create BSON from encrypted_field_config");
         }
-        if (!mc_EncryptedFieldConfig_parse(&ectx->efc, &efc_bson, ctx->status, ctx->crypt->opts.use_range_v2)) {
+        if (!mc_EncryptedFieldConfig_parse(&ectx->efc_old, &efc_bson, ctx->status, ctx->crypt->opts.use_range_v2)) {
             _mongocrypt_ctx_fail(ctx);
             return false;
         }
@@ -396,7 +394,7 @@ static bool _set_schema_from_collinfo(mongocrypt_ctx_t *ctx, bson_t *collinfo) {
             bson_free(ecocCollection);
         }
 
-        if (!mc_EncryptedFieldConfig_parse(&ectx->efc,
+        if (!mc_EncryptedFieldConfig_parse(&ectx->efc_old,
                                            &empty_encryptedFields,
                                            ctx->status,
                                            ctx->crypt->opts.use_range_v2)) {
@@ -404,7 +402,7 @@ static bool _set_schema_from_collinfo(mongocrypt_ctx_t *ctx, bson_t *collinfo) {
             _mongocrypt_ctx_fail(ctx);
             return false;
         }
-        _mongocrypt_buffer_steal_from_bson(&ectx->encrypted_field_config, &empty_encryptedFields);
+        _mongocrypt_buffer_steal_from_bson(&ectx->encrypted_field_config_old, &empty_encryptedFields);
     }
 
     BSON_ASSERT(bson_iter_init(&iter, collinfo));
@@ -482,7 +480,11 @@ static bool context_uses_fle2(mongocrypt_ctx_t *ctx) {
 
     BSON_ASSERT_PARAM(ctx);
 
-    return !_mongocrypt_buffer_empty(&ectx->encrypted_field_config);
+    if (ectx->use_schema_broker) {
+        return mc_schema_broker_has_any_qe_schemas(ectx->sb);
+    }
+
+    return !_mongocrypt_buffer_empty(&ectx->encrypted_field_config_old);
 }
 
 /* _fle2_collect_keys_for_compaction requests keys required to produce
@@ -508,9 +510,25 @@ static bool _fle2_collect_keys_for_compaction(mongocrypt_ctx_t *ctx) {
     /* (compact/cleanup)StructuredEncryptionData must not be sent to mongocryptd. */
     ectx->bypass_query_analysis = true;
 
+    if (ectx->use_schema_broker) {
+        const mc_EncryptedFieldConfig_t *efc =
+            mc_schema_broker_get_encryptedFields(ectx->sb, ectx->target_coll, ctx->status);
+        if (!efc) {
+            return _mongocrypt_ctx_fail(ctx);
+        }
+
+        for (const mc_EncryptedField_t *field = efc->fields; field != NULL; field = field->next) {
+            if (!_mongocrypt_key_broker_request_id(&ctx->kb, &field->keyId)) {
+                _mongocrypt_key_broker_status(&ctx->kb, ctx->status);
+                _mongocrypt_ctx_fail(ctx);
+                return false;
+            }
+        }
+    }
+
     mc_EncryptedField_t *field;
 
-    for (field = ectx->efc.fields; field != NULL; field = field->next) {
+    for (field = ectx->efc_old.fields; field != NULL; field = field->next) {
         if (!_mongocrypt_key_broker_request_id(&ctx->kb, &field->keyId)) {
             _mongocrypt_key_broker_status(&ctx->kb, ctx->status);
             _mongocrypt_ctx_fail(ctx);
@@ -629,7 +647,7 @@ static bool _fle2_mongo_op_markings(mongocrypt_ctx_t *ctx, bson_t *out) {
         return _mongocrypt_ctx_fail_w_msg(ctx, "unable to convert original_cmd to BSON");
     }
 
-    if (!_mongocrypt_buffer_to_bson(&ectx->encrypted_field_config, &encrypted_field_config_bson)) {
+    if (!_mongocrypt_buffer_to_bson(&ectx->encrypted_field_config_old, &encrypted_field_config_bson)) {
         return _mongocrypt_ctx_fail_w_msg(ctx, "unable to convert encrypted_field_config to BSON");
     }
 
@@ -678,10 +696,14 @@ static bool _create_markings_cmd_bson(mongocrypt_ctx_t *ctx, bson_t *out) {
         // mongocryptd. Drivers are expected to append $db in the RunCommand helper
         // used to send the command.
         bson_copy_to_excluding_noinit(&bson_view, out, "$db", NULL);
-        if (!mc_schema_broker_append_csfleEncryptionSchemas(ectx->sb, ectx->cmd_name, out, ctx->status)) {
+        if (!mc_schema_broker_insert_encryptionInformation(ectx->sb,
+                                                           ectx->cmd_name,
+                                                           out,
+                                                           ctx->crypt->csfle.okay ? MC_TO_CSFLE : MC_TO_MONGOCRYPTD,
+                                                           ctx->status)) {
             return _mongocrypt_ctx_fail(ctx);
         }
-        if (!mc_schema_broker_append_encryptionInformation(ectx->sb, ectx->cmd_name, out, ctx->status)) {
+        if (!mc_schema_broker_append_csfleEncryptionSchemas(ectx->sb, ectx->cmd_name, out, ctx->status)) {
             return _mongocrypt_ctx_fail(ctx);
         }
 
@@ -1245,7 +1267,7 @@ static moe_result must_omit_encryptionInformation(const char *command_name,
  */
 static bool _fle2_append_compactionTokens(mongocrypt_t *crypt,
                                           _mongocrypt_key_broker_t *kb,
-                                          mc_EncryptedFieldConfig_t *efc,
+                                          const mc_EncryptedFieldConfig_t *efc,
                                           const char *command_name,
                                           bson_t *out,
                                           mongocrypt_status_t *status) {
@@ -1271,7 +1293,7 @@ static bool _fle2_append_compactionTokens(mongocrypt_t *crypt,
         BSON_APPEND_DOCUMENT_BEGIN(out, "compactionTokens", &result_compactionTokens);
     }
 
-    mc_EncryptedField_t *ptr;
+    const mc_EncryptedField_t *ptr;
     for (ptr = efc->fields; ptr != NULL; ptr = ptr->next) {
         /* Append tokens. */
         _mongocrypt_buffer_t key = {0};
@@ -1491,8 +1513,10 @@ static bool _fle2_finalize(mongocrypt_ctx_t *ctx, mongocrypt_binary_t *out) {
         return _mongocrypt_ctx_fail_w_msg(ctx, "explicit encryption is not yet supported. See MONGOCRYPT-409.");
     }
 
-    if (!_mongocrypt_buffer_to_bson(&ectx->encrypted_field_config, &encrypted_field_config_bson)) {
-        return _mongocrypt_ctx_fail_w_msg(ctx, "malformed bson in encrypted_field_config_bson");
+    if (!ectx->use_schema_broker) {
+        if (!_mongocrypt_buffer_to_bson(&ectx->encrypted_field_config_old, &encrypted_field_config_bson)) {
+            return _mongocrypt_ctx_fail_w_msg(ctx, "malformed bson in encrypted_field_config_bson");
+        }
     }
 
     if (!_mongocrypt_buffer_to_bson(&ectx->original_cmd, &original_cmd_bson)) {
@@ -1533,10 +1557,23 @@ static bool _fle2_finalize(mongocrypt_ctx_t *ctx, mongocrypt_binary_t *out) {
         return _mongocrypt_ctx_fail(ctx);
     }
 
+    const mc_EncryptedFieldConfig_t *target_efc = NULL;
+    if (ectx->use_schema_broker) {
+        // For cleanupStructuredEncryptionData and compactStructuredEncryptionData, get the encryptedFields for the
+        // single target collection.
+        target_efc = mc_schema_broker_get_encryptedFields(ectx->sb, ectx->target_coll, ctx->status);
+        if (!target_efc) {
+            bson_destroy(&converted);
+            return _mongocrypt_ctx_fail(ctx);
+        }
+    } else {
+        target_efc = &ectx->efc_old;
+    }
+
     moe_result result = must_omit_encryptionInformation(command_name,
                                                         &converted,
                                                         ctx->crypt->opts.use_range_v2,
-                                                        &ectx->efc,
+                                                        target_efc,
                                                         ctx->status);
     if (!result.ok) {
         bson_destroy(&converted);
@@ -1545,20 +1582,31 @@ static bool _fle2_finalize(mongocrypt_ctx_t *ctx, mongocrypt_binary_t *out) {
 
     /* Append a new 'encryptionInformation'. */
     if (!result.must_omit && !ectx->used_empty_encryptedFields) {
-        if (!_fle2_insert_encryptionInformation(ctx,
-                                                command_name,
-                                                &converted,
-                                                ectx->target_ns,
-                                                &encrypted_field_config_bson,
-                                                ectx->target_coll,
-                                                MC_TO_MONGOD,
-                                                ctx->status)) {
-            bson_destroy(&converted);
-            return _mongocrypt_ctx_fail(ctx);
+        if (ectx->use_schema_broker) {
+            if (!mc_schema_broker_insert_encryptionInformation(ectx->sb,
+                                                               command_name,
+                                                               &converted,
+                                                               MC_TO_MONGOD,
+                                                               ctx->status)) {
+                bson_destroy(&converted);
+                return _mongocrypt_ctx_fail(ctx);
+            }
+        } else {
+            if (!_fle2_insert_encryptionInformation(ctx,
+                                                    command_name,
+                                                    &converted,
+                                                    ectx->target_ns,
+                                                    &encrypted_field_config_bson,
+                                                    ectx->target_coll,
+                                                    MC_TO_MONGOD,
+                                                    ctx->status)) {
+                bson_destroy(&converted);
+                return _mongocrypt_ctx_fail(ctx);
+            }
         }
     }
 
-    if (!_fle2_append_compactionTokens(ctx->crypt, &ctx->kb, &ectx->efc, command_name, &converted, ctx->status)) {
+    if (!_fle2_append_compactionTokens(ctx->crypt, &ctx->kb, target_efc, command_name, &converted, ctx->status)) {
         bson_destroy(&converted);
         return _mongocrypt_ctx_fail(ctx);
     }
@@ -1933,13 +1981,13 @@ static void _cleanup(mongocrypt_ctx_t *ctx) {
     bson_free(ectx->target_coll);
     _mongocrypt_buffer_cleanup(&ectx->list_collections_filter);
     _mongocrypt_buffer_cleanup(&ectx->schema_old);
-    _mongocrypt_buffer_cleanup(&ectx->encrypted_field_config);
+    _mongocrypt_buffer_cleanup(&ectx->encrypted_field_config_old);
     _mongocrypt_buffer_cleanup(&ectx->original_cmd);
     _mongocrypt_buffer_cleanup(&ectx->mongocryptd_cmd);
     _mongocrypt_buffer_cleanup(&ectx->marked_cmd);
     _mongocrypt_buffer_cleanup(&ectx->encrypted_cmd);
     _mongocrypt_buffer_cleanup(&ectx->ismaster.cmd);
-    mc_EncryptedFieldConfig_cleanup(&ectx->efc);
+    mc_EncryptedFieldConfig_cleanup(&ectx->efc_old);
 }
 
 static bool _try_schema_from_schema_map(mongocrypt_ctx_t *ctx) {
@@ -2021,16 +2069,16 @@ static bool _fle2_try_encrypted_field_config_from_map(mongocrypt_ctx_t *ctx) {
     }
 
     if (bson_iter_init_find(&iter, &encrypted_field_config_map, ectx->target_ns)) {
-        if (!_mongocrypt_buffer_copy_from_document_iter(&ectx->encrypted_field_config, &iter)) {
+        if (!_mongocrypt_buffer_copy_from_document_iter(&ectx->encrypted_field_config_old, &iter)) {
             return _mongocrypt_ctx_fail_w_msg(ctx,
                                               "unable to copy encrypted_field_config from "
                                               "encrypted_field_config_map");
         }
         bson_t efc_bson;
-        if (!_mongocrypt_buffer_to_bson(&ectx->encrypted_field_config, &efc_bson)) {
+        if (!_mongocrypt_buffer_to_bson(&ectx->encrypted_field_config_old, &efc_bson)) {
             return _mongocrypt_ctx_fail_w_msg(ctx, "unable to create BSON from encrypted_field_config");
         }
-        if (!mc_EncryptedFieldConfig_parse(&ectx->efc, &efc_bson, ctx->status, ctx->crypt->opts.use_range_v2)) {
+        if (!mc_EncryptedFieldConfig_parse(&ectx->efc_old, &efc_bson, ctx->status, ctx->crypt->opts.use_range_v2)) {
             _mongocrypt_ctx_fail(ctx);
             return false;
         }
@@ -2755,6 +2803,9 @@ bool mongocrypt_ctx_encrypt_init(mongocrypt_ctx_t *ctx, const char *db, int32_t 
     ctx->vtable.cleanup = _cleanup;
     ectx->bypass_query_analysis = ctx->crypt->opts.bypass_query_analysis;
     ectx->sb = mc_schema_broker_new();
+    if (ctx->crypt->opts.use_range_v2) {
+        mc_schema_broker_use_rangev2(ectx->sb);
+    }
     {
         const char *v = getenv("USE_SCHEMA_BROKER");
         if (v && 0 == strcmp(v, "ON")) {
@@ -2885,7 +2936,7 @@ static bool mongocrypt_ctx_encrypt_ismaster_done(mongocrypt_ctx_t *ctx) {
         if (!_fle2_try_encrypted_field_config_from_map(ctx)) {
             return false;
         }
-        if (_mongocrypt_buffer_empty(&ectx->encrypted_field_config)) {
+        if (mc_scheme_broker_need_more_schemas(ectx->sb)) {
             if (!_try_schema_from_create_or_collMod_cmd(ctx)) {
                 return false;
             }
@@ -2933,7 +2984,7 @@ static bool mongocrypt_ctx_encrypt_ismaster_done(mongocrypt_ctx_t *ctx) {
         if (!_fle2_try_encrypted_field_config_from_map(ctx)) {
             return false;
         }
-        if (_mongocrypt_buffer_empty(&ectx->encrypted_field_config)) {
+        if (_mongocrypt_buffer_empty(&ectx->encrypted_field_config_old)) {
             if (!_try_schema_from_create_or_collMod_cmd(ctx)) {
                 return false;
             }

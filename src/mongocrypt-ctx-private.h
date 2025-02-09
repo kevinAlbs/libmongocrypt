@@ -190,8 +190,8 @@ typedef struct {
      * 3. The `bulkWrite` command is processed and needs an empty encryptedFields to be processed by query analysis.
      * (`bulkWrite` does not support empty JSON schema).
      */
-    _mongocrypt_buffer_t encrypted_field_config;
-    mc_EncryptedFieldConfig_t efc;
+    _mongocrypt_buffer_t encrypted_field_config_old;
+    mc_EncryptedFieldConfig_t efc_old;
     // `used_empty_encryptedFields` is true if the collection has no JSON schema or encryptedFields,
     // yet an empty encryptedFields was constructed to support query analysis.
     // When true, an empty encryptedFields is sent to query analysis, but not appended to the final command.
