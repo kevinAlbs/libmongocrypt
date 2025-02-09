@@ -57,10 +57,16 @@ typedef struct {
     size_t ll_len;
     // TODO: add a `failed` to disallow use of the schema broker on error. Avoids needing to clean-up partially set
     // entries.
+    bool use_range_v2;
 } mc_schema_broker_t;
 
 static inline mc_schema_broker_t *mc_schema_broker_new(void) {
     return bson_malloc0(sizeof(mc_schema_broker_t));
+}
+
+static inline void mc_schema_broker_use_rangev2(mc_schema_broker_t *sb) {
+    BSON_ASSERT_PARAM(sb);
+    sb->use_range_v2 = true;
 }
 
 // mc_schema_broker_request adds a namespace to request a schema. Ignores duplicates.
@@ -439,6 +445,7 @@ static inline bool mc_schema_entry_satisfy_from_collinfo(mc_schema_entry_t *se,
                                                          const bson_t *collinfo,
                                                          const char *coll,
                                                          const char *db,
+                                                         bool use_range_v2,
                                                          mongocrypt_status_t *status) {
     BSON_ASSERT_PARAM(se);
     BSON_ASSERT_PARAM(collinfo);
@@ -480,10 +487,7 @@ static inline bool mc_schema_entry_satisfy_from_collinfo(mc_schema_entry_t *se,
             return false;
         }
 
-        if (!mc_EncryptedFieldConfig_parse(&se->encryptedFields.ef,
-                                           &se->encryptedFields.bson,
-                                           status,
-                                           true /* range v2 */)) {
+        if (!mc_EncryptedFieldConfig_parse(&se->encryptedFields.ef, &se->encryptedFields.bson, status, use_range_v2)) {
             return false;
         }
         se->encryptedFields.set = true;
@@ -593,7 +597,7 @@ static inline bool mc_schema_broker_satisfy_from_collinfo(mc_schema_broker_t *sb
         return false;
     }
 
-    if (!mc_schema_entry_satisfy_from_collinfo(se, collinfo, coll, sb->db, status)) {
+    if (!mc_schema_entry_satisfy_from_collinfo(se, collinfo, coll, sb->db, sb->use_range_v2, status)) {
         return false;
     }
 
@@ -670,7 +674,7 @@ static inline bool mc_schema_broker_satisfy_from_encryptedFieldsMap(mc_schema_br
             if (!mc_EncryptedFieldConfig_parse(&it->encryptedFields.ef,
                                                &it->encryptedFields.bson,
                                                status,
-                                               true /* range v2 */)) {
+                                               sb->use_range_v2)) {
                 goto loop_fail;
             }
 
@@ -714,7 +718,7 @@ static inline bool mc_schema_broker_satisfy_from_cache(mc_schema_broker_t *sb,
             goto loop_skip;
         }
 
-        if (!mc_schema_entry_satisfy_from_collinfo(it, collinfo, sb->db, it->coll, status)) {
+        if (!mc_schema_entry_satisfy_from_collinfo(it, collinfo, sb->db, it->coll, sb->use_range_v2, status)) {
             bson_destroy(collinfo);
             bson_free(ns);
             goto loop_fail;
