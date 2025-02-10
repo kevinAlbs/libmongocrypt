@@ -2173,9 +2173,8 @@ static bool _try_empty_schema_for_create(mongocrypt_ctx_t *ctx) {
     }
 
     if (ectx->use_schema_broker) {
-        if (!mc_schema_broker_satisfy_remaining_with_empty_schemas(ectx->sb,
-                                                                   &ctx->crypt->cache_collinfo,
-                                                                   ctx->status)) {
+        // Satisfy with an empty schema. Do not cache the entry.
+        if (!mc_schema_broker_satisfy_remaining_with_empty_schemas(ectx->sb, NULL /* cache */, ctx->status)) {
             return _mongocrypt_ctx_fail(ctx);
         }
         BSON_ASSERT(!mc_scheme_broker_need_more_schemas(ectx->sb));

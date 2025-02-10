@@ -740,9 +740,10 @@ static inline bool mc_schema_broker_satisfy_from_cache(mc_schema_broker_t *sb,
 
 // mc_schema_broker_satisfy_remaining_from_empty_schemas is called when a driver signals all listCollection results
 // have been fed. Assume any remaining collections have no schema.
-static inline bool mc_schema_broker_satisfy_remaining_with_empty_schemas(mc_schema_broker_t *sb,
-                                                                         _mongocrypt_cache_t *collinfo_cache,
-                                                                         mongocrypt_status_t *status) {
+static inline bool
+mc_schema_broker_satisfy_remaining_with_empty_schemas(mc_schema_broker_t *sb,
+                                                      _mongocrypt_cache_t *collinfo_cache /* may be NULL */,
+                                                      mongocrypt_status_t *status) {
     BSON_ASSERT_PARAM(sb);
 
     for (mc_schema_entry_t *it = sb->ll; it != NULL; it = it->next) {
@@ -751,7 +752,7 @@ static inline bool mc_schema_broker_satisfy_remaining_with_empty_schemas(mc_sche
         }
 
         // Cache the received collinfo.
-        {
+        if (collinfo_cache) {
             char *ns = bson_strdup_printf("%s.%s", sb->db, it->coll);
             bson_t empty = BSON_INITIALIZER;
             if (!_mongocrypt_cache_add_copy(collinfo_cache, ns, &empty, status)) {
