@@ -233,9 +233,12 @@ static inline bool mc_schema_broker_append_encryptionInformation(const mc_schema
 
     if (has_encryptedFields && has_jsonSchema) {
         // If any collection has encryptedFields, error if any collection only has a JSON Schema.
-        CLIENT_ERR("Collection '%s' has encryptedFields but collection '%s' has a JSON schema configured. To "
-                   "ignore the JSON schema, add '%s' to encryptedFieldsMap.",
+
+        CLIENT_ERR("Collection '%s' has an encryptedFields configured, but collection '%s' has a JSON schema "
+                   "configured. This is currently not supported. To ignore the JSON schema, add an empty entry for "
+                   "'%s' to AutoEncryptionOpts.encryptedFieldsMap: \"%s\": {}",
                    coll_with_encryptedFields,
+                   coll_with_jsonSchema,
                    coll_with_jsonSchema,
                    coll_with_jsonSchema);
         return false;
