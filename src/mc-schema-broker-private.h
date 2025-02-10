@@ -134,6 +134,16 @@ static inline bool mc_schema_broker_has_any_qe_schemas(const mc_schema_broker_t 
     return false;
 }
 
+static inline bool try_or(bool val, const char *msg, const char *func, mongocrypt_status_t *status) {
+    if (!val) {
+        CLIENT_ERR("[%s] statement failed: %s", func, msg);
+    }
+    return val;
+}
+
+// TRY_BSON_OR is a helper to handle failures. On failure, set a failed status.
+#define TRY_BSON_OR(stmt) if (!try_or(stmt, "BSON failure", BSON_FUNC, status))
+
 // mc_schema_broker_append_listCollections_filter appends a filter to a listCollections command for collections
 // that still need schemas.
 static inline bool
@@ -142,39 +152,66 @@ mc_schema_broker_append_listCollections_filter(const mc_schema_broker_t *sb, bso
     BSON_ASSERT_PARAM(out);
     BSON_OPTIONAL_PARAM(status);
 
+    bool ok = false;
+    bson_array_builder_t *bab = NULL;
+
     if (sb->ll_len == 0) {
         CLIENT_ERR("Unexpected: attempting to create listCollections filter but no schemas requested");
-        return false;
+        goto fail;
     } else if (sb->ll_len == 1) {
         // One request. Append as: { "name": <name> }
-        BCON_APPEND(out, "name", BCON_UTF8(sb->ll->coll));
-        return true;
+        TRY_BSON_OR(BSON_APPEND_UTF8(out, "name", sb->ll->coll)) {
+            goto fail;
+        }
     } else {
         // Multiple requests. Append as: { "name": { "$in": [ <name1>, <name2>, ... ] } }
         bson_t in;
-        BSON_ASSERT(BSON_APPEND_DOCUMENT_BEGIN(out, "name", &in));
-        bson_array_builder_t *bab;
-        BSON_ASSERT(BSON_APPEND_ARRAY_BUILDER_BEGIN(&in, "$in", &bab));
+        TRY_BSON_OR(BSON_APPEND_DOCUMENT_BEGIN(out, "name", &in)) {
+            goto fail;
+        }
+        TRY_BSON_OR(BSON_APPEND_ARRAY_BUILDER_BEGIN(&in, "$in", &bab)) {
+            goto fail;
+        }
         for (mc_schema_entry_t *se = sb->ll; se != NULL; se = se->next) {
-            BSON_ASSERT(bson_array_builder_append_utf8(bab, se->coll, -1));
+            TRY_BSON_OR(bson_array_builder_append_utf8(bab, se->coll, -1)) {
+                goto fail;
+            }
             // TODO: do not request schemas that are already satisfied.
         }
-        BSON_ASSERT(bson_append_array_builder_end(&in, bab));
-        BSON_ASSERT(bson_append_document_end(out, &in));
+        TRY_BSON_OR(bson_append_array_builder_end(&in, bab)) {
+            bab = NULL;
+            goto fail;
+        }
+        bab = NULL; // Always freed in `bson_append_array_builder_end`
+        TRY_BSON_OR(bson_append_document_end(out, &in)) {
+            goto fail;
+        }
     }
-    return true;
+
+    ok = true;
+fail:
+    bson_array_builder_destroy(bab);
+    return ok;
 }
 
-static inline void append_encryptedFields(const bson_t *encryptedFields, const char *coll, bson_t *out) {
+static inline bool
+append_encryptedFields(const bson_t *encryptedFields, const char *coll, bson_t *out, mongocrypt_status_t *status) {
     BSON_ASSERT_PARAM(encryptedFields);
     BSON_ASSERT_PARAM(out);
     BSON_ASSERT_PARAM(coll);
 
+    bool ok = false;
+
     bool has_escCollection = false;
     bool has_ecocCollection = false;
 
+    char *default_escCollection = NULL;
+    char *default_ecocCollection = NULL;
+
     bson_iter_t iter;
-    BSON_ASSERT(bson_iter_init(&iter, encryptedFields));
+    TRY_BSON_OR(bson_iter_init(&iter, encryptedFields)) {
+        goto fail;
+    }
 
     // Copy all values except state collections.
     while (bson_iter_next(&iter)) {
@@ -184,20 +221,58 @@ static inline void append_encryptedFields(const bson_t *encryptedFields, const c
         if (strcmp(bson_iter_key(&iter), "ecocCollection") == 0) {
             has_ecocCollection = true;
         }
-        BSON_ASSERT(BSON_APPEND_VALUE(out, bson_iter_key(&iter), bson_iter_value(&iter)));
+        TRY_BSON_OR(BSON_APPEND_VALUE(out, bson_iter_key(&iter), bson_iter_value(&iter))) {
+            goto fail;
+        }
     }
 
     if (!has_escCollection) {
-        char *default_escCollection = bson_strdup_printf("enxcol_.%s.esc", coll);
-        BSON_ASSERT(BSON_APPEND_UTF8(out, "escCollection", default_escCollection));
-        bson_free(default_escCollection);
+        default_escCollection = bson_strdup_printf("enxcol_.%s.esc", coll);
+        TRY_BSON_OR(BSON_APPEND_UTF8(out, "escCollection", default_escCollection)) {
+            goto fail;
+        }
     }
 
     if (!has_ecocCollection) {
-        char *default_ecocCollection = bson_strdup_printf("enxcol_.%s.ecoc", coll);
-        BSON_ASSERT(BSON_APPEND_UTF8(out, "ecocCollection", default_ecocCollection));
-        bson_free(default_ecocCollection);
+        default_ecocCollection = bson_strdup_printf("enxcol_.%s.ecoc", coll);
+        TRY_BSON_OR(BSON_APPEND_UTF8(out, "ecocCollection", default_ecocCollection)) {
+            goto fail;
+        }
     }
+
+    ok = true;
+fail:
+    bson_free(default_escCollection);
+    bson_free(default_ecocCollection);
+    return ok;
+}
+
+static inline bool make_empty_encryptedFields(const char *coll, bson_t *out, mongocrypt_status_t *status) {
+    BSON_ASSERT_PARAM(coll);
+    BSON_ASSERT_PARAM(out);
+    BSON_OPTIONAL_PARAM(status);
+
+    bool ok = false;
+
+    char *escCollection = bson_strdup_printf("enxcol_.%s.esc", coll);
+    char *ecocCollection = bson_strdup_printf("enxcol_.%s.ecoc", coll);
+    bson_t empty_array = BSON_INITIALIZER;
+    TRY_BSON_OR(BSON_APPEND_UTF8(out, "escCollection", escCollection)) {
+        goto fail;
+    }
+    TRY_BSON_OR(BSON_APPEND_UTF8(out, "ecocCollection", ecocCollection)) {
+        goto fail;
+    }
+    TRY_BSON_OR(BSON_APPEND_ARRAY(out, "fields", &empty_array)) {
+        goto fail;
+    }
+
+    ok = true;
+fail:
+    bson_destroy(&empty_array);
+    bson_free(escCollection);
+    bson_free(ecocCollection);
+    return ok;
 }
 
 static inline bool append_encryptionInformation(const mc_schema_broker_t *sb,
@@ -251,41 +326,56 @@ static inline bool append_encryptionInformation(const mc_schema_broker_t *sb,
     }
 
     bson_t encryption_information_bson;
-    BSON_ASSERT(BSON_APPEND_DOCUMENT_BEGIN(out, "encryptionInformation", &encryption_information_bson));
-    BSON_ASSERT(BSON_APPEND_INT32(&encryption_information_bson, "type", 1));
+    TRY_BSON_OR(BSON_APPEND_DOCUMENT_BEGIN(out, "encryptionInformation", &encryption_information_bson)) {
+        return false;
+    }
+    TRY_BSON_OR(BSON_APPEND_INT32(&encryption_information_bson, "type", 1)) {
+        return false;
+    }
 
     bson_t schema_bson;
-    BSON_ASSERT(BSON_APPEND_DOCUMENT_BEGIN(&encryption_information_bson, "schema", &schema_bson));
+    TRY_BSON_OR(BSON_APPEND_DOCUMENT_BEGIN(&encryption_information_bson, "schema", &schema_bson)) {
+        return false;
+    }
 
     for (mc_schema_entry_t *se = sb->ll; se != NULL; se = se->next) {
         BSON_ASSERT(se->satisfied);
+        bool loop_ok = false;
         char *ns = bson_strdup_printf("%s.%s", sb->db, se->coll);
+        bson_t empty_encryptedFields = BSON_INITIALIZER;
         if (!se->encryptedFields.set) {
-            bson_t empty_encryptedFields = BSON_INITIALIZER;
-            {
-                char *escCollection = bson_strdup_printf("enxcol_.%s.esc", se->coll);
-                char *ecocCollection = bson_strdup_printf("enxcol_.%s.ecoc", se->coll);
-                bson_t empty_array = BSON_INITIALIZER;
-                bool ok = true;
-                ok = ok && BSON_APPEND_UTF8(&empty_encryptedFields, "escCollection", escCollection);
-                ok = ok && BSON_APPEND_UTF8(&empty_encryptedFields, "ecocCollection", ecocCollection);
-                ok = ok && BSON_APPEND_ARRAY(&empty_encryptedFields, "fields", &empty_array);
-                bson_destroy(&empty_array);
-                bson_free(escCollection);
-                bson_free(ecocCollection);
-                BSON_ASSERT(ok);
+            if (!make_empty_encryptedFields(se->coll, &empty_encryptedFields, status)) {
+                goto loop_fail;
             }
-            BSON_ASSERT(BSON_APPEND_DOCUMENT(&schema_bson, ns, &empty_encryptedFields));
+            TRY_BSON_OR(BSON_APPEND_DOCUMENT(&schema_bson, ns, &empty_encryptedFields)) {
+                goto loop_fail;
+            }
         } else {
             bson_t ns_to_schema_bson;
-            BSON_ASSERT(BSON_APPEND_DOCUMENT_BEGIN(&schema_bson, ns, &ns_to_schema_bson));
-            append_encryptedFields(&se->encryptedFields.bson, se->coll, &ns_to_schema_bson);
-            BSON_ASSERT(bson_append_document_end(&schema_bson, &ns_to_schema_bson));
+            TRY_BSON_OR(BSON_APPEND_DOCUMENT_BEGIN(&schema_bson, ns, &ns_to_schema_bson)) {
+                goto loop_fail;
+            }
+            if (!append_encryptedFields(&se->encryptedFields.bson, se->coll, &ns_to_schema_bson, status)) {
+                goto loop_fail;
+            }
+            TRY_BSON_OR(bson_append_document_end(&schema_bson, &ns_to_schema_bson)) {
+                goto loop_fail;
+            }
         }
+        loop_ok = true;
+    loop_fail:
         bson_free(ns);
+        bson_destroy(&empty_encryptedFields);
+        if (!loop_ok) {
+            return false;
+        }
     }
-    BSON_ASSERT(bson_append_document_end(&encryption_information_bson, &schema_bson));
-    BSON_ASSERT(bson_append_document_end(out, &encryption_information_bson));
+    TRY_BSON_OR(bson_append_document_end(&encryption_information_bson, &schema_bson)) {
+        return false;
+    }
+    TRY_BSON_OR(bson_append_document_end(out, &encryption_information_bson)) {
+        return false;
+    }
     return true;
 }
 
@@ -322,8 +412,8 @@ static inline bool mc_schema_broker_insert_encryptionInformation(const mc_schema
                 goto fail;
             }
             if (bson_has_field(cmd, "nsInfo.1")) {
-                CLIENT_ERR(
-                    "expected one namespace in `bulkWrite`, but found more than one. Only one namespace is supported.");
+                CLIENT_ERR("expected one namespace in `bulkWrite`, but found more than one. Only one namespace is "
+                           "supported.");
                 goto fail;
             }
             if (!mc_iter_document_as_bson(&nsInfo_iter, &nsInfo, status)) {
@@ -832,41 +922,67 @@ static inline bool mc_schema_broker_append_csfleEncryptionSchemas(mc_schema_brok
         BSON_ASSERT(!se->next);
         BSON_ASSERT(se->satisfied);
         if (se->jsonSchema.set) {
-            BSON_ASSERT(BSON_APPEND_DOCUMENT(out, "jsonSchema", &se->jsonSchema.bson));
-            BSON_ASSERT(BSON_APPEND_BOOL(out, "isRemoteSchema", se->jsonSchema.is_remote));
+            TRY_BSON_OR(BSON_APPEND_DOCUMENT(out, "jsonSchema", &se->jsonSchema.bson)) {
+                return false;
+            }
+            TRY_BSON_OR(BSON_APPEND_BOOL(out, "isRemoteSchema", se->jsonSchema.is_remote)) {
+                return false;
+            }
         } else if (!skip_empty_jsonSchema) {
             bson_t empty = BSON_INITIALIZER;
-            BSON_ASSERT(BSON_APPEND_DOCUMENT(out, "jsonSchema", &empty));
-            BSON_ASSERT(BSON_APPEND_BOOL(out, "isRemoteSchema", false));
+            TRY_BSON_OR(BSON_APPEND_DOCUMENT(out, "jsonSchema", &empty)) {
+                return false;
+            }
+            // Append isRemoteSchema:true to preserve existing value. But I expect it can/should be false.
+            TRY_BSON_OR(BSON_APPEND_BOOL(out, "isRemoteSchema", true)) {
+                return false;
+            }
         }
         return true;
     }
 
     // Append multiple schemas as "csfleEncryptionSchemas"
     bson_t csfleEncryptionSchemas;
-    BSON_ASSERT(BSON_APPEND_DOCUMENT_BEGIN(out, "csfleEncryptionSchemas", &csfleEncryptionSchemas));
+    TRY_BSON_OR(BSON_APPEND_DOCUMENT_BEGIN(out, "csfleEncryptionSchemas", &csfleEncryptionSchemas)) {
+        return false;
+    }
 
     for (mc_schema_entry_t *se = sb->ll; se != NULL; se = se->next) {
         BSON_ASSERT(se->satisfied);
 
         char *ns = bson_strdup_printf("%s.%s", sb->db, se->coll);
         bson_t ns_to_doc;
-        BSON_ASSERT(BSON_APPEND_DOCUMENT_BEGIN(&csfleEncryptionSchemas, ns, &ns_to_doc));
+        TRY_BSON_OR(BSON_APPEND_DOCUMENT_BEGIN(&csfleEncryptionSchemas, ns, &ns_to_doc)) {
+            bson_free(ns);
+            return false;
+        }
         bson_free(ns);
 
         if (!se->jsonSchema.set) {
             // Append as an empty document.
             bson_t empty = BSON_INITIALIZER;
-            BSON_ASSERT(BSON_APPEND_DOCUMENT(&ns_to_doc, "schema", &empty));
-            BSON_ASSERT(BSON_APPEND_BOOL(&ns_to_doc, "isRemoteSchema", false));
+            TRY_BSON_OR(BSON_APPEND_DOCUMENT(&ns_to_doc, "schema", &empty)) {
+                return false;
+            }
+            TRY_BSON_OR(BSON_APPEND_BOOL(&ns_to_doc, "isRemoteSchema", false)) {
+                return false;
+            }
         } else {
-            BSON_ASSERT(BSON_APPEND_DOCUMENT(&ns_to_doc, "schema", &se->jsonSchema.bson));
-            BSON_ASSERT(BSON_APPEND_BOOL(&ns_to_doc, "isRemoteSchema", se->jsonSchema.is_remote));
+            TRY_BSON_OR(BSON_APPEND_DOCUMENT(&ns_to_doc, "schema", &se->jsonSchema.bson)) {
+                return false;
+            }
+            TRY_BSON_OR(BSON_APPEND_BOOL(&ns_to_doc, "isRemoteSchema", se->jsonSchema.is_remote)) {
+                return false;
+            }
         }
-        BSON_ASSERT(bson_append_document_end(&csfleEncryptionSchemas, &ns_to_doc));
+        TRY_BSON_OR(bson_append_document_end(&csfleEncryptionSchemas, &ns_to_doc)) {
+            return false;
+        }
     }
 
-    BSON_ASSERT(bson_append_document_end(out, &csfleEncryptionSchemas));
+    TRY_BSON_OR(bson_append_document_end(out, &csfleEncryptionSchemas)) {
+        return false;
+    }
 
     return true;
 }

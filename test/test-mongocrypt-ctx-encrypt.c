@@ -1397,7 +1397,7 @@ static void _test_encrypt_no_schema(_mongocrypt_tester_t *tester) {
         cmd_to_mongocryptd = mongocrypt_binary_new();
         ASSERT_OK(mongocrypt_ctx_mongo_op(ctx, cmd_to_mongocryptd), ctx);
         ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(TEST_BSON("{'find': 'collection_without_schema', 'filter': {}, "
-                                                      "'jsonSchema': {}, 'isRemoteSchema': false}"),
+                                                      "'jsonSchema': {}, 'isRemoteSchema': true}"),
                                             cmd_to_mongocryptd);
         mongocrypt_binary_destroy(cmd_to_mongocryptd);
     }

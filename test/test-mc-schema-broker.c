@@ -570,7 +570,7 @@ static void test_mc_schema_broker_append_csfleEncryptionSchemas(_mongocrypt_test
 
         bson_t got = BSON_INITIALIZER;
         ASSERT_OK_STATUS(mc_schema_broker_append_csfleEncryptionSchemas(sb, "find", &got, status), status);
-        bson_t *expect = TMP_BSON(BSON_STR({"jsonSchema" : {}, "isRemoteSchema" : false}));
+        bson_t *expect = TMP_BSON(BSON_STR({"jsonSchema" : {}, "isRemoteSchema" : true}));
         ASSERT_EQUAL_BSON(expect, &got);
 
         bson_destroy(&got);
