@@ -76,6 +76,7 @@ mc_schema_broker_request(mc_schema_broker_t *sb, const char *db, const char *col
     BSON_ASSERT_PARAM(sb);
     BSON_ASSERT_PARAM(db);
     BSON_ASSERT_PARAM(coll);
+    BSON_OPTIONAL_PARAM(status);
 
     if (sb->db && 0 != strcmp(sb->db, db)) {
         CLIENT_ERR("Cannot request schemas for different databases. Requested schemas for '%s' and '%s'.", sb->db, db);
@@ -123,11 +124,6 @@ static inline void mc_schema_broker_destroy(mc_schema_broker_t *sb) {
     return;
 }
 
-static inline bool mc_schema_broker_has_any_csfle_schemas(const mc_schema_broker_t *sb) {
-    BSON_ASSERT_PARAM(sb);
-    return false;
-}
-
 static inline bool mc_schema_broker_has_any_qe_schemas(const mc_schema_broker_t *sb) {
     BSON_ASSERT_PARAM(sb);
     for (mc_schema_entry_t *se = sb->ll; se != NULL; se = se->next) {
@@ -138,17 +134,13 @@ static inline bool mc_schema_broker_has_any_qe_schemas(const mc_schema_broker_t 
     return false;
 }
 
-static inline bool mc_schema_broker_has_multiple_ns(const mc_schema_broker_t *sb) {
-    BSON_ASSERT_PARAM(sb);
-    return false;
-}
-
 // mc_schema_broker_append_listCollections_filter appends a filter to a listCollections command for collections
 // that still need schemas.
 static inline bool
 mc_schema_broker_append_listCollections_filter(const mc_schema_broker_t *sb, bson_t *out, mongocrypt_status_t *status) {
     BSON_ASSERT_PARAM(sb);
     BSON_ASSERT_PARAM(out);
+    BSON_OPTIONAL_PARAM(status);
 
     if (sb->ll_len == 0) {
         CLIENT_ERR("Unexpected: attempting to create listCollections filter but no schemas requested");
@@ -208,12 +200,14 @@ static inline void append_encryptedFields(const bson_t *encryptedFields, const c
     }
 }
 
-static inline bool mc_schema_broker_append_encryptionInformation(const mc_schema_broker_t *sb,
-                                                                 const char *cmd_name,
-                                                                 bson_t *out,
-                                                                 mongocrypt_status_t *status) {
+static inline bool append_encryptionInformation(const mc_schema_broker_t *sb,
+                                                const char *cmd_name,
+                                                bson_t *out,
+                                                mongocrypt_status_t *status) {
     BSON_ASSERT_PARAM(sb);
+    BSON_ASSERT_PARAM(cmd_name);
     BSON_ASSERT_PARAM(out);
+    BSON_OPTIONAL_PARAM(status);
 
     // Check if any collection has encryptedFields.
     bool has_encryptedFields = false;
@@ -303,13 +297,15 @@ static inline bool mc_schema_broker_insert_encryptionInformation(const mc_schema
                                                                  bson_t *cmd /* in and out */,
                                                                  mc_cmd_target_t cmd_target,
                                                                  mongocrypt_status_t *status) {
+    BSON_ASSERT_PARAM(sb);
+    BSON_ASSERT_PARAM(cmd_name);
+    BSON_ASSERT_PARAM(cmd);
+    BSON_OPTIONAL_PARAM(status);
+
     bson_t out = BSON_INITIALIZER;
     bson_t explain = BSON_INITIALIZER;
     bson_iter_t iter;
     bool ok = false;
-
-    BSON_ASSERT_PARAM(cmd_name);
-    BSON_ASSERT_PARAM(cmd);
 
     // For `bulkWrite`, append `encryptionInformation` inside the `nsInfo.0` document.
     if (0 == strcmp(cmd_name, "bulkWrite")) {
@@ -358,7 +354,7 @@ static inline bool mc_schema_broker_insert_encryptionInformation(const mc_schema
             // Copy everything from input `nsInfo`.
             bson_concat(&nsInfo_array_0, &nsInfo);
             // And append `encryptionInformation`.
-            if (!mc_schema_broker_append_encryptionInformation(sb, cmd_name, &nsInfo_array_0, status)) {
+            if (!append_encryptionInformation(sb, cmd_name, &nsInfo_array_0, status)) {
                 goto fail;
             }
             if (!bson_append_document_end(&nsInfo_array, &nsInfo_array_0)) {
@@ -383,7 +379,7 @@ static inline bool mc_schema_broker_insert_encryptionInformation(const mc_schema
         // All commands except "explain" and "bulkWrite" expect "encryptionInformation"
         // at top-level. "explain" sent to mongocryptd expects
         // "encryptionInformation" at top-level.
-        if (!mc_schema_broker_append_encryptionInformation(sb, cmd_name, cmd, status)) {
+        if (!append_encryptionInformation(sb, cmd_name, cmd, status)) {
             goto fail;
         }
         bson_destroy(&out);
@@ -420,7 +416,7 @@ static inline bool mc_schema_broker_insert_encryptionInformation(const mc_schema
         bson_copy_to(&tmp, &explain);
     }
 
-    if (!mc_schema_broker_append_encryptionInformation(sb, cmd_name, &explain, status)) {
+    if (!append_encryptionInformation(sb, cmd_name, &explain, status)) {
         goto fail;
     }
 
@@ -454,7 +450,9 @@ static inline bool mc_schema_entry_satisfy_from_collinfo(mc_schema_entry_t *se,
                                                          mongocrypt_status_t *status) {
     BSON_ASSERT_PARAM(se);
     BSON_ASSERT_PARAM(collinfo);
+    BSON_ASSERT_PARAM(coll);
     BSON_ASSERT_PARAM(db);
+    BSON_OPTIONAL_PARAM(status);
     BSON_ASSERT(!se->satisfied);
 
     bson_iter_t collinfo_iter;
@@ -546,6 +544,8 @@ static inline bool mc_schema_broker_satisfy_from_collinfo(mc_schema_broker_t *sb
                                                           mongocrypt_status_t *status) {
     BSON_ASSERT_PARAM(sb);
     BSON_ASSERT_PARAM(collinfo);
+    BSON_ASSERT_PARAM(collinfo_cache);
+    BSON_OPTIONAL_PARAM(status);
 
     bson_iter_t collinfo_iter;
 
@@ -613,6 +613,7 @@ static inline bool
 mc_schema_broker_satisfy_from_schemaMap(mc_schema_broker_t *sb, const bson_t *schema_map, mongocrypt_status_t *status) {
     BSON_ASSERT_PARAM(sb);
     BSON_ASSERT_PARAM(schema_map);
+    BSON_OPTIONAL_PARAM(status);
 
     for (mc_schema_entry_t *it = sb->ll; it != NULL; it = it->next) {
         if (it->satisfied) {
@@ -655,6 +656,7 @@ static inline bool mc_schema_broker_satisfy_from_encryptedFieldsMap(mc_schema_br
                                                                     mongocrypt_status_t *status) {
     BSON_ASSERT_PARAM(sb);
     BSON_ASSERT_PARAM(ef_map);
+    BSON_OPTIONAL_PARAM(status);
 
     for (mc_schema_entry_t *it = sb->ll; it != NULL; it = it->next) {
         if (it->satisfied) {
@@ -704,6 +706,7 @@ static inline bool mc_schema_broker_satisfy_from_cache(mc_schema_broker_t *sb,
                                                        mongocrypt_status_t *status) {
     BSON_ASSERT_PARAM(sb);
     BSON_ASSERT_PARAM(listCollections_cache);
+    BSON_OPTIONAL_PARAM(status);
 
     for (mc_schema_entry_t *it = sb->ll; it != NULL; it = it->next) {
         if (it->satisfied) {
@@ -748,6 +751,8 @@ mc_schema_broker_satisfy_remaining_with_empty_schemas(mc_schema_broker_t *sb,
                                                       _mongocrypt_cache_t *collinfo_cache /* may be NULL */,
                                                       mongocrypt_status_t *status) {
     BSON_ASSERT_PARAM(sb);
+    BSON_OPTIONAL_PARAM(collinfo_cache);
+    BSON_OPTIONAL_PARAM(status);
 
     for (mc_schema_entry_t *it = sb->ll; it != NULL; it = it->next) {
         if (it->satisfied) {
@@ -782,7 +787,9 @@ static inline bool mc_schema_broker_append_csfleEncryptionSchemas(mc_schema_brok
                                                                   bson_t *out,
                                                                   mongocrypt_status_t *status) {
     BSON_ASSERT_PARAM(sb);
+    BSON_ASSERT_PARAM(cmd_name);
     BSON_ASSERT_PARAM(out);
+    BSON_OPTIONAL_PARAM(status);
 
     // Check if any collection has encryptedFields.
     bool has_encryptedFields = false;
@@ -878,6 +885,7 @@ static inline const mc_EncryptedFieldConfig_t *
 mc_schema_broker_get_encryptedFields(mc_schema_broker_t *sb, const char *coll, mongocrypt_status_t *status) {
     BSON_ASSERT_PARAM(sb);
     BSON_ASSERT_PARAM(coll);
+    BSON_OPTIONAL_PARAM(status);
     for (mc_schema_entry_t *it = sb->ll; it != NULL; it = it->next) {
         if (0 != strcmp(it->coll, coll)) {
             continue;
@@ -899,6 +907,10 @@ mc_schema_broker_get_encryptedFields(mc_schema_broker_t *sb, const char *coll, m
 static inline bool mc_schema_broker_satisfy_from_create_or_collMod(mc_schema_broker_t *sb,
                                                                    const bson_t *cmd,
                                                                    mongocrypt_status_t *status) {
+    BSON_ASSERT_PARAM(sb);
+    BSON_ASSERT_PARAM(cmd);
+    BSON_OPTIONAL_PARAM(status);
+
     bson_iter_t iter;
     if (!bson_iter_init(&iter, cmd) || !bson_iter_next(&iter)) {
         CLIENT_ERR("Failed to get command name");
@@ -962,6 +974,9 @@ static inline bool mc_schema_broker_apply_schemas_to_cmd(const mc_schema_broker_
                                                          bson_t *cmd /* in and out */,
                                                          mc_cmd_target_t cmd_target,
                                                          mongocrypt_status_t *status) {
+    BSON_ASSERT_PARAM(sb);
+    BSON_ASSERT_PARAM(cmd);
+    BSON_OPTIONAL_PARAM(status);
     CLIENT_ERR("mc_schema_broker_apply_schemas_to_cmd is not-yet implemented");
     return false;
 }
