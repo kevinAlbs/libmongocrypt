@@ -210,344 +210,6 @@ fail:
     return ok;
 }
 
-static inline bool
-append_encryptedFields(const bson_t *encryptedFields, const char *coll, bson_t *out, mongocrypt_status_t *status) {
-    BSON_ASSERT_PARAM(encryptedFields);
-    BSON_ASSERT_PARAM(out);
-    BSON_ASSERT_PARAM(coll);
-
-    bool ok = false;
-
-    bool has_escCollection = false;
-    bool has_ecocCollection = false;
-
-    char *default_escCollection = NULL;
-    char *default_ecocCollection = NULL;
-
-    bson_iter_t iter;
-    TRY_BSON_OR(bson_iter_init(&iter, encryptedFields)) {
-        goto fail;
-    }
-
-    // Copy all values except state collections.
-    while (bson_iter_next(&iter)) {
-        if (strcmp(bson_iter_key(&iter), "escCollection") == 0) {
-            has_escCollection = true;
-        }
-        if (strcmp(bson_iter_key(&iter), "ecocCollection") == 0) {
-            has_ecocCollection = true;
-        }
-        TRY_BSON_OR(BSON_APPEND_VALUE(out, bson_iter_key(&iter), bson_iter_value(&iter))) {
-            goto fail;
-        }
-    }
-
-    if (!has_escCollection) {
-        default_escCollection = bson_strdup_printf("enxcol_.%s.esc", coll);
-        TRY_BSON_OR(BSON_APPEND_UTF8(out, "escCollection", default_escCollection)) {
-            goto fail;
-        }
-    }
-
-    if (!has_ecocCollection) {
-        default_ecocCollection = bson_strdup_printf("enxcol_.%s.ecoc", coll);
-        TRY_BSON_OR(BSON_APPEND_UTF8(out, "ecocCollection", default_ecocCollection)) {
-            goto fail;
-        }
-    }
-
-    ok = true;
-fail:
-    bson_free(default_escCollection);
-    bson_free(default_ecocCollection);
-    return ok;
-}
-
-static inline bool make_empty_encryptedFields(const char *coll, bson_t *out, mongocrypt_status_t *status) {
-    BSON_ASSERT_PARAM(coll);
-    BSON_ASSERT_PARAM(out);
-    BSON_OPTIONAL_PARAM(status);
-
-    bool ok = false;
-
-    char *escCollection = bson_strdup_printf("enxcol_.%s.esc", coll);
-    char *ecocCollection = bson_strdup_printf("enxcol_.%s.ecoc", coll);
-    bson_t empty_array = BSON_INITIALIZER;
-    TRY_BSON_OR(BSON_APPEND_UTF8(out, "escCollection", escCollection)) {
-        goto fail;
-    }
-    TRY_BSON_OR(BSON_APPEND_UTF8(out, "ecocCollection", ecocCollection)) {
-        goto fail;
-    }
-    TRY_BSON_OR(BSON_APPEND_ARRAY(out, "fields", &empty_array)) {
-        goto fail;
-    }
-
-    ok = true;
-fail:
-    bson_destroy(&empty_array);
-    bson_free(escCollection);
-    bson_free(ecocCollection);
-    return ok;
-}
-
-static inline bool append_encryptionInformation(const mc_schema_broker_t *sb,
-                                                const char *cmd_name,
-                                                bson_t *out,
-                                                mongocrypt_status_t *status) {
-    BSON_ASSERT_PARAM(sb);
-    BSON_ASSERT_PARAM(cmd_name);
-    BSON_ASSERT_PARAM(out);
-    BSON_OPTIONAL_PARAM(status);
-
-    // Check if any collection has encryptedFields.
-    bool has_encryptedFields = false;
-    bool has_jsonSchema = false;
-    const char *coll_with_encryptedFields = NULL;
-    const char *coll_with_jsonSchema = NULL;
-    for (mc_schema_entry_t *it = sb->ll; it != NULL; it = it->next) {
-        BSON_ASSERT(it->satisfied);
-        if (it->encryptedFields.set) {
-            has_encryptedFields = true;
-            coll_with_encryptedFields = it->coll;
-        } else if (it->jsonSchema.set) {
-            has_jsonSchema = true;
-            coll_with_jsonSchema = it->coll;
-        }
-    }
-
-    if (has_encryptedFields && has_jsonSchema) {
-        // If any collection has encryptedFields, error if any collection only has a JSON Schema.
-
-        CLIENT_ERR("Collection '%s' has an encryptedFields configured, but collection '%s' has a JSON schema "
-                   "configured. This is currently not supported. To ignore the JSON schema, add an empty entry for "
-                   "'%s' to AutoEncryptionOpts.encryptedFieldsMap: \"%s\": {}",
-                   coll_with_encryptedFields,
-                   coll_with_jsonSchema,
-                   coll_with_jsonSchema,
-                   coll_with_jsonSchema);
-        return false;
-    }
-
-    if (!has_encryptedFields && has_jsonSchema) {
-        // No collection has encryptedFields, but some collection has a jsonSchema.
-        // Apply jsonSchemas later in `mc_schema_broker_append_csfleEncryptionSchemas`.
-        return true;
-    }
-
-    if (!has_encryptedFields && !has_jsonSchema && 0 != strcmp("bulkWrite", cmd_name)) {
-        // No collection has encryptedFields or jsonSchema. Return to add an empty `jsonSchema` later.
-        // bulkWrite only supports encryptedFields. For other commands, apply an empty `jsonSchema` later.
-        return true;
-    }
-
-    bson_t encryption_information_bson;
-    TRY_BSON_OR(BSON_APPEND_DOCUMENT_BEGIN(out, "encryptionInformation", &encryption_information_bson)) {
-        return false;
-    }
-    TRY_BSON_OR(BSON_APPEND_INT32(&encryption_information_bson, "type", 1)) {
-        return false;
-    }
-
-    bson_t schema_bson;
-    TRY_BSON_OR(BSON_APPEND_DOCUMENT_BEGIN(&encryption_information_bson, "schema", &schema_bson)) {
-        return false;
-    }
-
-    for (mc_schema_entry_t *se = sb->ll; se != NULL; se = se->next) {
-        BSON_ASSERT(se->satisfied);
-        bool loop_ok = false;
-        char *ns = bson_strdup_printf("%s.%s", sb->db, se->coll);
-        bson_t empty_encryptedFields = BSON_INITIALIZER;
-        if (!se->encryptedFields.set) {
-            if (!make_empty_encryptedFields(se->coll, &empty_encryptedFields, status)) {
-                goto loop_fail;
-            }
-            TRY_BSON_OR(BSON_APPEND_DOCUMENT(&schema_bson, ns, &empty_encryptedFields)) {
-                goto loop_fail;
-            }
-        } else {
-            bson_t ns_to_schema_bson;
-            TRY_BSON_OR(BSON_APPEND_DOCUMENT_BEGIN(&schema_bson, ns, &ns_to_schema_bson)) {
-                goto loop_fail;
-            }
-            if (!append_encryptedFields(&se->encryptedFields.bson, se->coll, &ns_to_schema_bson, status)) {
-                goto loop_fail;
-            }
-            TRY_BSON_OR(bson_append_document_end(&schema_bson, &ns_to_schema_bson)) {
-                goto loop_fail;
-            }
-        }
-        loop_ok = true;
-    loop_fail:
-        bson_free(ns);
-        bson_destroy(&empty_encryptedFields);
-        if (!loop_ok) {
-            return false;
-        }
-    }
-    TRY_BSON_OR(bson_append_document_end(&encryption_information_bson, &schema_bson)) {
-        return false;
-    }
-    TRY_BSON_OR(bson_append_document_end(out, &encryption_information_bson)) {
-        return false;
-    }
-    return true;
-}
-
-typedef enum { MC_TO_CSFLE, MC_TO_MONGOCRYPTD, MC_TO_MONGOD } mc_cmd_target_t;
-
-// TODO: remove `cmd_name` param? Read command name from command.
-static inline bool mc_schema_broker_insert_encryptionInformation(const mc_schema_broker_t *sb,
-                                                                 const char *cmd_name,
-                                                                 bson_t *cmd /* in and out */,
-                                                                 mc_cmd_target_t cmd_target,
-                                                                 mongocrypt_status_t *status) {
-    BSON_ASSERT_PARAM(sb);
-    BSON_ASSERT_PARAM(cmd_name);
-    BSON_ASSERT_PARAM(cmd);
-    BSON_OPTIONAL_PARAM(status);
-
-    bson_t out = BSON_INITIALIZER;
-    bson_t explain = BSON_INITIALIZER;
-    bson_iter_t iter;
-    bool ok = false;
-
-    // For `bulkWrite`, append `encryptionInformation` inside the `nsInfo.0` document.
-    if (0 == strcmp(cmd_name, "bulkWrite")) {
-        // Get the single `nsInfo` document from the input command.
-        bson_t nsInfo; // Non-owning.
-        {
-            bson_iter_t nsInfo_iter;
-            if (!bson_iter_init(&nsInfo_iter, cmd)) {
-                CLIENT_ERR("failed to iterate command");
-                goto fail;
-            }
-            if (!bson_iter_find_descendant(&nsInfo_iter, "nsInfo.0", &nsInfo_iter)) {
-                CLIENT_ERR("expected one namespace in `bulkWrite`, but found zero.");
-                goto fail;
-            }
-            if (bson_has_field(cmd, "nsInfo.1")) {
-                CLIENT_ERR("expected one namespace in `bulkWrite`, but found more than one. Only one namespace is "
-                           "supported.");
-                goto fail;
-            }
-            if (!mc_iter_document_as_bson(&nsInfo_iter, &nsInfo, status)) {
-                goto fail;
-            }
-            // Ensure `nsInfo` does not already have an `encryptionInformation` field.
-            if (bson_has_field(&nsInfo, "encryptionInformation")) {
-                CLIENT_ERR("unexpected `encryptionInformation` present in input `nsInfo`.");
-                goto fail;
-            }
-        }
-
-        // Copy input and append `encryptionInformation` to `nsInfo`.
-        {
-            // Append everything from input except `nsInfo`.
-            bson_copy_to_excluding_noinit(cmd, &out, "nsInfo", NULL);
-            // Append `nsInfo` array.
-            bson_t nsInfo_array;
-            if (!BSON_APPEND_ARRAY_BEGIN(&out, "nsInfo", &nsInfo_array)) {
-                CLIENT_ERR("unable to begin appending 'nsInfo' array");
-                goto fail;
-            }
-            bson_t nsInfo_array_0;
-            if (!BSON_APPEND_DOCUMENT_BEGIN(&nsInfo_array, "0", &nsInfo_array_0)) {
-                CLIENT_ERR("unable to append 'nsInfo.0' document");
-                goto fail;
-            }
-            // Copy everything from input `nsInfo`.
-            bson_concat(&nsInfo_array_0, &nsInfo);
-            // And append `encryptionInformation`.
-            if (!append_encryptionInformation(sb, cmd_name, &nsInfo_array_0, status)) {
-                goto fail;
-            }
-            if (!bson_append_document_end(&nsInfo_array, &nsInfo_array_0)) {
-                CLIENT_ERR("unable to end appending 'nsInfo' document in array");
-            }
-            if (!bson_append_array_end(&out, &nsInfo_array)) {
-                CLIENT_ERR("unable to end appending 'nsInfo' array");
-                goto fail;
-            }
-            // Overwrite `cmd`.
-            bson_destroy(cmd);
-            if (!bson_steal(cmd, &out)) {
-                CLIENT_ERR("failed to steal BSON with encryptionInformation");
-                goto fail;
-            }
-        }
-
-        goto success;
-    }
-
-    if (0 != strcmp(cmd_name, "explain") || cmd_target == MC_TO_MONGOCRYPTD) {
-        // All commands except "explain" and "bulkWrite" expect "encryptionInformation"
-        // at top-level. "explain" sent to mongocryptd expects
-        // "encryptionInformation" at top-level.
-        if (!append_encryptionInformation(sb, cmd_name, cmd, status)) {
-            goto fail;
-        }
-        bson_destroy(&out);
-        goto success;
-    }
-
-    // The "explain" command for csfle is a special case.
-    // mongocryptd expects "encryptionInformation" to be a sibling of the
-    // "explain" document. Example:
-    // {
-    //    "explain": { "find": "to-mongocryptd" },
-    //    "encryptionInformation": {}
-    // }
-    // csfle and mongod expect "encryptionInformation" to be nested in the
-    // "explain" document. Example:
-    // {
-    //    "explain": {
-    //       "find": "to-csfle-or-mongod"
-    //       "encryptionInformation": {}
-    //    }
-    // }
-    BSON_ASSERT(bson_iter_init_find(&iter, cmd, "explain"));
-    if (!BSON_ITER_HOLDS_DOCUMENT(&iter)) {
-        CLIENT_ERR("expected 'explain' to be document");
-        goto fail;
-    }
-
-    {
-        bson_t tmp;
-        if (!mc_iter_document_as_bson(&iter, &tmp, status)) {
-            goto fail;
-        }
-        bson_destroy(&explain);
-        bson_copy_to(&tmp, &explain);
-    }
-
-    if (!append_encryptionInformation(sb, cmd_name, &explain, status)) {
-        goto fail;
-    }
-
-    if (!BSON_APPEND_DOCUMENT(&out, "explain", &explain)) {
-        CLIENT_ERR("unable to append 'explain' document");
-        goto fail;
-    }
-
-    bson_copy_to_excluding_noinit(cmd, &out, "explain", NULL);
-    bson_destroy(cmd);
-    if (!bson_steal(cmd, &out)) {
-        CLIENT_ERR("failed to steal BSON with encryptionInformation");
-        goto fail;
-    }
-
-success:
-    ok = true;
-fail:
-    bson_destroy(&explain);
-    if (!ok) {
-        bson_destroy(&out);
-    }
-    return ok;
-}
-
 static inline bool mc_schema_entry_satisfy_from_collinfo(mc_schema_entry_t *se,
                                                          const bson_t *collinfo,
                                                          const char *coll,
@@ -884,125 +546,6 @@ mc_schema_broker_satisfy_remaining_with_empty_schemas(mc_schema_broker_t *sb,
     return true;
 }
 
-// mc_schema_broker_append_csfleEncryptionSchemas appends schema information to send to QA.
-// For only one JSON schema, use `jsonSchema` for backwards compatibility.
-// For multiple JSON schemas, use `csfleEncryptionSchemas` (added in server 8.2).
-// TODO: remove `cmd_name` param? Read command name from command.
-static inline bool mc_schema_broker_append_csfleEncryptionSchemas(mc_schema_broker_t *sb,
-                                                                  const char *cmd_name,
-                                                                  bson_t *out,
-                                                                  mongocrypt_status_t *status) {
-    BSON_ASSERT_PARAM(sb);
-    BSON_ASSERT_PARAM(cmd_name);
-    BSON_ASSERT_PARAM(out);
-    BSON_OPTIONAL_PARAM(status);
-
-    // Check if any collection has encryptedFields.
-    bool has_encryptedFields = false;
-    const char *coll_with_encryptedFields = NULL;
-    for (mc_schema_entry_t *it = sb->ll; it != NULL; it = it->next) {
-        BSON_ASSERT(it->satisfied);
-        if (it->encryptedFields.set) {
-            has_encryptedFields = true;
-            coll_with_encryptedFields = it->coll;
-            break;
-        }
-    }
-
-    if (has_encryptedFields) {
-        // If any collection has encryptedFields, error if any collection only has a JSON Schema.
-        for (mc_schema_entry_t *it = sb->ll; it != NULL; it = it->next) {
-            BSON_ASSERT(it->satisfied);
-            if (!it->encryptedFields.set && it->jsonSchema.set) {
-                const char *coll_with_jsonSchema = it->coll;
-                CLIENT_ERR("Collection '%s' has encryptedFields but collection '%s' has a JSON schema configured. To "
-                           "ignore the JSON schema, add '%s' to encryptedFieldsMap.",
-                           coll_with_encryptedFields,
-                           coll_with_jsonSchema,
-                           coll_with_jsonSchema);
-                return false;
-            }
-        }
-        // Handle encryptedFields in mc_schema_broker_append_encryptionInformation
-        return true;
-    }
-
-    // bulkWrite does not support CSFLE.
-    // If there is no schema, an empty QE schema is added by `mc_schema_broker_append_encryptionInformation`.
-    bool skip_empty_jsonSchema = (0 == strcmp("bulkWrite", cmd_name));
-
-    if (sb->ll_len == 1) {
-        // Append the only jsonSchema with the "jsonSchema" field.
-        mc_schema_entry_t *se = sb->ll;
-        BSON_ASSERT(se);
-        BSON_ASSERT(!se->next);
-        BSON_ASSERT(se->satisfied);
-        if (se->jsonSchema.set) {
-            TRY_BSON_OR(BSON_APPEND_DOCUMENT(out, "jsonSchema", &se->jsonSchema.bson)) {
-                return false;
-            }
-            TRY_BSON_OR(BSON_APPEND_BOOL(out, "isRemoteSchema", se->jsonSchema.is_remote)) {
-                return false;
-            }
-        } else if (!skip_empty_jsonSchema) {
-            bson_t empty = BSON_INITIALIZER;
-            TRY_BSON_OR(BSON_APPEND_DOCUMENT(out, "jsonSchema", &empty)) {
-                return false;
-            }
-            // Append isRemoteSchema:true to preserve existing value. But I expect it can/should be false.
-            TRY_BSON_OR(BSON_APPEND_BOOL(out, "isRemoteSchema", true)) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    // Append multiple schemas as "csfleEncryptionSchemas"
-    bson_t csfleEncryptionSchemas;
-    TRY_BSON_OR(BSON_APPEND_DOCUMENT_BEGIN(out, "csfleEncryptionSchemas", &csfleEncryptionSchemas)) {
-        return false;
-    }
-
-    for (mc_schema_entry_t *se = sb->ll; se != NULL; se = se->next) {
-        BSON_ASSERT(se->satisfied);
-
-        char *ns = bson_strdup_printf("%s.%s", sb->db, se->coll);
-        bson_t ns_to_doc;
-        TRY_BSON_OR(BSON_APPEND_DOCUMENT_BEGIN(&csfleEncryptionSchemas, ns, &ns_to_doc)) {
-            bson_free(ns);
-            return false;
-        }
-        bson_free(ns);
-
-        if (!se->jsonSchema.set) {
-            // Append as an empty document.
-            bson_t empty = BSON_INITIALIZER;
-            TRY_BSON_OR(BSON_APPEND_DOCUMENT(&ns_to_doc, "schema", &empty)) {
-                return false;
-            }
-            TRY_BSON_OR(BSON_APPEND_BOOL(&ns_to_doc, "isRemoteSchema", false)) {
-                return false;
-            }
-        } else {
-            TRY_BSON_OR(BSON_APPEND_DOCUMENT(&ns_to_doc, "schema", &se->jsonSchema.bson)) {
-                return false;
-            }
-            TRY_BSON_OR(BSON_APPEND_BOOL(&ns_to_doc, "isRemoteSchema", se->jsonSchema.is_remote)) {
-                return false;
-            }
-        }
-        TRY_BSON_OR(bson_append_document_end(&csfleEncryptionSchemas, &ns_to_doc)) {
-            return false;
-        }
-    }
-
-    TRY_BSON_OR(bson_append_document_end(out, &csfleEncryptionSchemas)) {
-        return false;
-    }
-
-    return true;
-}
-
 static inline bool mc_scheme_broker_need_more_schemas(mc_schema_broker_t *sb) {
     BSON_ASSERT_PARAM(sb);
     for (mc_schema_entry_t *it = sb->ll; it != NULL; it = it->next) {
@@ -1100,16 +643,473 @@ static inline bool mc_schema_broker_satisfy_from_create_or_collMod(mc_schema_bro
     return true;
 }
 
-// TODO: consider putting mc_schema_broker_insert_encryptionInformation and
-// mc_schema_broker_append_csfleEncryptionSchemas behind a common interface: mc_schema_broker_apply_schemas_to_cmd
-static inline bool mc_schema_broker_apply_schemas_to_cmd(const mc_schema_broker_t *sb,
-                                                         bson_t *cmd /* in and out */,
-                                                         mc_cmd_target_t cmd_target,
-                                                         mongocrypt_status_t *status) {
+static inline bool
+append_encryptedFields(const bson_t *encryptedFields, const char *coll, bson_t *out, mongocrypt_status_t *status) {
+    BSON_ASSERT_PARAM(encryptedFields);
+    BSON_ASSERT_PARAM(out);
+    BSON_ASSERT_PARAM(coll);
+
+    bool ok = false;
+
+    bool has_escCollection = false;
+    bool has_ecocCollection = false;
+
+    char *default_escCollection = NULL;
+    char *default_ecocCollection = NULL;
+
+    bson_iter_t iter;
+    TRY_BSON_OR(bson_iter_init(&iter, encryptedFields)) {
+        goto fail;
+    }
+
+    // Copy all values except state collections.
+    while (bson_iter_next(&iter)) {
+        if (strcmp(bson_iter_key(&iter), "escCollection") == 0) {
+            has_escCollection = true;
+        }
+        if (strcmp(bson_iter_key(&iter), "ecocCollection") == 0) {
+            has_ecocCollection = true;
+        }
+        TRY_BSON_OR(BSON_APPEND_VALUE(out, bson_iter_key(&iter), bson_iter_value(&iter))) {
+            goto fail;
+        }
+    }
+
+    if (!has_escCollection) {
+        default_escCollection = bson_strdup_printf("enxcol_.%s.esc", coll);
+        TRY_BSON_OR(BSON_APPEND_UTF8(out, "escCollection", default_escCollection)) {
+            goto fail;
+        }
+    }
+
+    if (!has_ecocCollection) {
+        default_ecocCollection = bson_strdup_printf("enxcol_.%s.ecoc", coll);
+        TRY_BSON_OR(BSON_APPEND_UTF8(out, "ecocCollection", default_ecocCollection)) {
+            goto fail;
+        }
+    }
+
+    ok = true;
+fail:
+    bson_free(default_escCollection);
+    bson_free(default_ecocCollection);
+    return ok;
+}
+
+static inline bool make_empty_encryptedFields(const char *coll, bson_t *out, mongocrypt_status_t *status) {
+    BSON_ASSERT_PARAM(coll);
+    BSON_ASSERT_PARAM(out);
+    BSON_OPTIONAL_PARAM(status);
+
+    bool ok = false;
+
+    char *escCollection = bson_strdup_printf("enxcol_.%s.esc", coll);
+    char *ecocCollection = bson_strdup_printf("enxcol_.%s.ecoc", coll);
+    bson_t empty_array = BSON_INITIALIZER;
+    TRY_BSON_OR(BSON_APPEND_UTF8(out, "escCollection", escCollection)) {
+        goto fail;
+    }
+    TRY_BSON_OR(BSON_APPEND_UTF8(out, "ecocCollection", ecocCollection)) {
+        goto fail;
+    }
+    TRY_BSON_OR(BSON_APPEND_ARRAY(out, "fields", &empty_array)) {
+        goto fail;
+    }
+
+    ok = true;
+fail:
+    bson_destroy(&empty_array);
+    bson_free(escCollection);
+    bson_free(ecocCollection);
+    return ok;
+}
+
+static inline bool append_encryptionInformation(const mc_schema_broker_t *sb,
+                                                const char *cmd_name,
+                                                bson_t *out,
+                                                mongocrypt_status_t *status) {
+    BSON_ASSERT_PARAM(sb);
+    BSON_ASSERT_PARAM(cmd_name);
+    BSON_ASSERT_PARAM(out);
+    BSON_OPTIONAL_PARAM(status);
+
+    bson_t encryption_information_bson;
+    TRY_BSON_OR(BSON_APPEND_DOCUMENT_BEGIN(out, "encryptionInformation", &encryption_information_bson)) {
+        return false;
+    }
+    TRY_BSON_OR(BSON_APPEND_INT32(&encryption_information_bson, "type", 1)) {
+        return false;
+    }
+
+    bson_t schema_bson;
+    TRY_BSON_OR(BSON_APPEND_DOCUMENT_BEGIN(&encryption_information_bson, "schema", &schema_bson)) {
+        return false;
+    }
+
+    for (mc_schema_entry_t *se = sb->ll; se != NULL; se = se->next) {
+        BSON_ASSERT(se->satisfied);
+        bool loop_ok = false;
+        char *ns = bson_strdup_printf("%s.%s", sb->db, se->coll);
+        bson_t empty_encryptedFields = BSON_INITIALIZER;
+        if (!se->encryptedFields.set) {
+            if (!make_empty_encryptedFields(se->coll, &empty_encryptedFields, status)) {
+                goto loop_fail;
+            }
+            TRY_BSON_OR(BSON_APPEND_DOCUMENT(&schema_bson, ns, &empty_encryptedFields)) {
+                goto loop_fail;
+            }
+        } else {
+            bson_t ns_to_schema_bson;
+            TRY_BSON_OR(BSON_APPEND_DOCUMENT_BEGIN(&schema_bson, ns, &ns_to_schema_bson)) {
+                goto loop_fail;
+            }
+            if (!append_encryptedFields(&se->encryptedFields.bson, se->coll, &ns_to_schema_bson, status)) {
+                goto loop_fail;
+            }
+            TRY_BSON_OR(bson_append_document_end(&schema_bson, &ns_to_schema_bson)) {
+                goto loop_fail;
+            }
+        }
+        loop_ok = true;
+    loop_fail:
+        bson_free(ns);
+        bson_destroy(&empty_encryptedFields);
+        if (!loop_ok) {
+            return false;
+        }
+    }
+    TRY_BSON_OR(bson_append_document_end(&encryption_information_bson, &schema_bson)) {
+        return false;
+    }
+    TRY_BSON_OR(bson_append_document_end(out, &encryption_information_bson)) {
+        return false;
+    }
+    return true;
+}
+
+static const char *get_cmd_name(const bson_t *cmd, mongocrypt_status_t *status) {
+    bson_iter_t iter;
+    const char *cmd_name;
+
+    BSON_ASSERT_PARAM(cmd);
+
+    if (!bson_iter_init(&iter, cmd)) {
+        CLIENT_ERR("unable to iterate over command BSON");
+        return NULL;
+    }
+
+    /* The command name is the first key. */
+    if (!bson_iter_next(&iter)) {
+        CLIENT_ERR("unexpected empty BSON for command");
+        return NULL;
+    }
+
+    cmd_name = bson_iter_key(&iter);
+    if (!cmd_name) {
+        CLIENT_ERR("unable to get command name from BSON");
+        return NULL;
+    }
+    return cmd_name;
+}
+
+typedef enum { MC_TO_CSFLE, MC_TO_MONGOCRYPTD, MC_TO_MONGOD } mc_cmd_target_t;
+
+static inline bool insert_encryptionInformation(const mc_schema_broker_t *sb,
+                                                const char *cmd_name,
+                                                bson_t *cmd /* in and out */,
+                                                mc_cmd_target_t cmd_target,
+                                                mongocrypt_status_t *status) {
+    BSON_ASSERT_PARAM(sb);
+    BSON_ASSERT_PARAM(cmd_name);
+    BSON_ASSERT_PARAM(cmd);
+    BSON_OPTIONAL_PARAM(status);
+
+    bson_t out = BSON_INITIALIZER;
+    bson_t explain = BSON_INITIALIZER;
+    bson_iter_t iter;
+    bool ok = false;
+
+    // For `bulkWrite`, append `encryptionInformation` inside the `nsInfo.0` document.
+    if (0 == strcmp(cmd_name, "bulkWrite")) {
+        // Get the single `nsInfo` document from the input command.
+        bson_t nsInfo; // Non-owning.
+        {
+            bson_iter_t nsInfo_iter;
+            if (!bson_iter_init(&nsInfo_iter, cmd)) {
+                CLIENT_ERR("failed to iterate command");
+                goto fail;
+            }
+            if (!bson_iter_find_descendant(&nsInfo_iter, "nsInfo.0", &nsInfo_iter)) {
+                CLIENT_ERR("expected one namespace in `bulkWrite`, but found zero.");
+                goto fail;
+            }
+            if (bson_has_field(cmd, "nsInfo.1")) {
+                CLIENT_ERR("expected one namespace in `bulkWrite`, but found more than one. Only one namespace is "
+                           "supported.");
+                goto fail;
+            }
+            if (!mc_iter_document_as_bson(&nsInfo_iter, &nsInfo, status)) {
+                goto fail;
+            }
+            // Ensure `nsInfo` does not already have an `encryptionInformation` field.
+            if (bson_has_field(&nsInfo, "encryptionInformation")) {
+                CLIENT_ERR("unexpected `encryptionInformation` present in input `nsInfo`.");
+                goto fail;
+            }
+        }
+
+        // Copy input and append `encryptionInformation` to `nsInfo`.
+        {
+            // Append everything from input except `nsInfo`.
+            bson_copy_to_excluding_noinit(cmd, &out, "nsInfo", NULL);
+            // Append `nsInfo` array.
+            bson_t nsInfo_array;
+            if (!BSON_APPEND_ARRAY_BEGIN(&out, "nsInfo", &nsInfo_array)) {
+                CLIENT_ERR("unable to begin appending 'nsInfo' array");
+                goto fail;
+            }
+            bson_t nsInfo_array_0;
+            if (!BSON_APPEND_DOCUMENT_BEGIN(&nsInfo_array, "0", &nsInfo_array_0)) {
+                CLIENT_ERR("unable to append 'nsInfo.0' document");
+                goto fail;
+            }
+            // Copy everything from input `nsInfo`.
+            bson_concat(&nsInfo_array_0, &nsInfo);
+            // And append `encryptionInformation`.
+            if (!append_encryptionInformation(sb, cmd_name, &nsInfo_array_0, status)) {
+                goto fail;
+            }
+            if (!bson_append_document_end(&nsInfo_array, &nsInfo_array_0)) {
+                CLIENT_ERR("unable to end appending 'nsInfo' document in array");
+            }
+            if (!bson_append_array_end(&out, &nsInfo_array)) {
+                CLIENT_ERR("unable to end appending 'nsInfo' array");
+                goto fail;
+            }
+            // Overwrite `cmd`.
+            bson_destroy(cmd);
+            if (!bson_steal(cmd, &out)) {
+                CLIENT_ERR("failed to steal BSON with encryptionInformation");
+                goto fail;
+            }
+        }
+
+        goto success;
+    }
+
+    if (0 != strcmp(cmd_name, "explain") || cmd_target == MC_TO_MONGOCRYPTD) {
+        // All commands except "explain" and "bulkWrite" expect "encryptionInformation"
+        // at top-level. "explain" sent to mongocryptd expects
+        // "encryptionInformation" at top-level.
+        if (!append_encryptionInformation(sb, cmd_name, cmd, status)) {
+            goto fail;
+        }
+        bson_destroy(&out);
+        goto success;
+    }
+
+    // The "explain" command for csfle is a special case.
+    // mongocryptd expects "encryptionInformation" to be a sibling of the
+    // "explain" document. Example:
+    // {
+    //    "explain": { "find": "to-mongocryptd" },
+    //    "encryptionInformation": {}
+    // }
+    // csfle and mongod expect "encryptionInformation" to be nested in the
+    // "explain" document. Example:
+    // {
+    //    "explain": {
+    //       "find": "to-csfle-or-mongod"
+    //       "encryptionInformation": {}
+    //    }
+    // }
+    BSON_ASSERT(bson_iter_init_find(&iter, cmd, "explain"));
+    if (!BSON_ITER_HOLDS_DOCUMENT(&iter)) {
+        CLIENT_ERR("expected 'explain' to be document");
+        goto fail;
+    }
+
+    {
+        bson_t tmp;
+        if (!mc_iter_document_as_bson(&iter, &tmp, status)) {
+            goto fail;
+        }
+        bson_destroy(&explain);
+        bson_copy_to(&tmp, &explain);
+    }
+
+    if (!append_encryptionInformation(sb, cmd_name, &explain, status)) {
+        goto fail;
+    }
+
+    if (!BSON_APPEND_DOCUMENT(&out, "explain", &explain)) {
+        CLIENT_ERR("unable to append 'explain' document");
+        goto fail;
+    }
+
+    bson_copy_to_excluding_noinit(cmd, &out, "explain", NULL);
+    bson_destroy(cmd);
+    if (!bson_steal(cmd, &out)) {
+        CLIENT_ERR("failed to steal BSON with encryptionInformation");
+        goto fail;
+    }
+
+success:
+    ok = true;
+fail:
+    bson_destroy(&explain);
+    if (!ok) {
+        bson_destroy(&out);
+    }
+    return ok;
+}
+
+// mc_schema_broker_append_csfleEncryptionSchemas appends schema information to a command for CSFLE.
+// Only consumed by query analysis (mongocryptd/crypt_shared).
+// For one JSON schema, use `jsonSchema` for backwards compatibility.
+// For multiple JSON schemas, use `csfleEncryptionSchemas` (added in server 8.2).
+static inline bool insert_csfleEncryptionSchemas(const mc_schema_broker_t *sb,
+                                                 bson_t *cmd /* in/out */,
+                                                 mc_cmd_target_t cmd_target,
+                                                 mongocrypt_status_t *status) {
     BSON_ASSERT_PARAM(sb);
     BSON_ASSERT_PARAM(cmd);
     BSON_OPTIONAL_PARAM(status);
-    CLIENT_ERR("mc_schema_broker_apply_schemas_to_cmd is not-yet implemented");
-    return false;
+
+    if (cmd_target != MC_TO_CSFLE && cmd_target != MC_TO_MONGOCRYPTD) {
+        // CSFLE schemas are only used for query analysis.
+        return true;
+    }
+
+    if (sb->ll_len == 1) {
+        // Append the only jsonSchema with the "jsonSchema" field.
+        const mc_schema_entry_t *se = sb->ll;
+        BSON_ASSERT(se);
+        BSON_ASSERT(!se->next);
+        BSON_ASSERT(se->satisfied);
+        if (se->jsonSchema.set) {
+            TRY_BSON_OR(BSON_APPEND_DOCUMENT(cmd, "jsonSchema", &se->jsonSchema.bson)) {
+                return false;
+            }
+            TRY_BSON_OR(BSON_APPEND_BOOL(cmd, "isRemoteSchema", se->jsonSchema.is_remote)) {
+                return false;
+            }
+        } else {
+            bson_t empty = BSON_INITIALIZER;
+            TRY_BSON_OR(BSON_APPEND_DOCUMENT(cmd, "jsonSchema", &empty)) {
+                return false;
+            }
+            // Append isRemoteSchema:true to preserve existing value. But I expect it can/should be false.
+            TRY_BSON_OR(BSON_APPEND_BOOL(cmd, "isRemoteSchema", true)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    // Append multiple schemas as "csfleEncryptionSchemas"
+    bson_t csfleEncryptionSchemas;
+    TRY_BSON_OR(BSON_APPEND_DOCUMENT_BEGIN(cmd, "csfleEncryptionSchemas", &csfleEncryptionSchemas)) {
+        return false;
+    }
+
+    for (mc_schema_entry_t *se = sb->ll; se != NULL; se = se->next) {
+        BSON_ASSERT(se->satisfied);
+
+        char *ns = bson_strdup_printf("%s.%s", sb->db, se->coll);
+        bson_t ns_to_doc;
+        TRY_BSON_OR(BSON_APPEND_DOCUMENT_BEGIN(&csfleEncryptionSchemas, ns, &ns_to_doc)) {
+            bson_free(ns);
+            return false;
+        }
+        bson_free(ns);
+
+        if (!se->jsonSchema.set) {
+            // Append as an empty document.
+            bson_t empty = BSON_INITIALIZER;
+            TRY_BSON_OR(BSON_APPEND_DOCUMENT(&ns_to_doc, "schema", &empty)) {
+                return false;
+            }
+            TRY_BSON_OR(BSON_APPEND_BOOL(&ns_to_doc, "isRemoteSchema", false)) {
+                return false;
+            }
+        } else {
+            TRY_BSON_OR(BSON_APPEND_DOCUMENT(&ns_to_doc, "schema", &se->jsonSchema.bson)) {
+                return false;
+            }
+            TRY_BSON_OR(BSON_APPEND_BOOL(&ns_to_doc, "isRemoteSchema", se->jsonSchema.is_remote)) {
+                return false;
+            }
+        }
+        TRY_BSON_OR(bson_append_document_end(&csfleEncryptionSchemas, &ns_to_doc)) {
+            return false;
+        }
+    }
+
+    TRY_BSON_OR(bson_append_document_end(cmd, &csfleEncryptionSchemas)) {
+        return false;
+    }
+
+    return true;
+}
+
+static inline bool mc_schema_broker_add_schemas_to_cmd(const mc_schema_broker_t *sb,
+                                                       bson_t *cmd /* in and out */,
+                                                       mc_cmd_target_t cmd_target,
+                                                       mongocrypt_status_t *status) {
+    BSON_ASSERT_PARAM(sb);
+    BSON_ASSERT_PARAM(cmd);
+    BSON_OPTIONAL_PARAM(status);
+
+    const char *cmd_name = get_cmd_name(cmd, status);
+    if (!cmd_name) {
+        return false;
+    }
+
+    bool has_encryptedFields = false;
+    bool has_jsonSchema = false;
+    const char *coll_with_encryptedFields = NULL;
+    const char *coll_with_jsonSchema = NULL;
+    for (mc_schema_entry_t *it = sb->ll; it != NULL; it = it->next) {
+        BSON_ASSERT(it->satisfied);
+        if (it->encryptedFields.set) {
+            has_encryptedFields = true;
+            coll_with_encryptedFields = it->coll;
+        } else if (it->jsonSchema.set) {
+            has_jsonSchema = true;
+            coll_with_jsonSchema = it->coll;
+        }
+    }
+
+    if (has_encryptedFields && has_jsonSchema) {
+        // If any collection has encryptedFields, error if any collection only has a JSON Schema.
+        CLIENT_ERR("Collection '%s' has an encryptedFields configured, but collection '%s' has a JSON schema "
+                   "configured. This is currently not supported. To ignore the JSON schema, add an empty entry for "
+                   "'%s' to AutoEncryptionOpts.encryptedFieldsMap: \"%s\": {}",
+                   coll_with_encryptedFields,
+                   coll_with_jsonSchema,
+                   coll_with_jsonSchema,
+                   coll_with_jsonSchema);
+        return false;
+    }
+
+    if (has_encryptedFields) {
+        // Use encryptionInformation.
+        return insert_encryptionInformation(sb, cmd_name, cmd, cmd_target, status);
+    }
+
+    if (has_jsonSchema) {
+        // Use csfleEncryptionSchemas / jsonSchema only.
+        return insert_csfleEncryptionSchemas(sb, cmd, cmd_target, status);
+    }
+
+    // Collections have no QE or CSFLE schemas.
+    if (0 == strcmp(cmd_name, "bulkWrite")) {
+        // "bulkWrite" does not support the jsonSchema field. Use encryptionInformation with empty schemas.
+        return insert_encryptionInformation(sb, cmd_name, cmd, cmd_target, status);
+    }
+
+    // Use csfleEncryptionSchemas / jsonSchema with empty schemas.
+    return insert_csfleEncryptionSchemas(sb, cmd, cmd_target, status);
 }
 #endif // MC_SCHEMA_BROKER_PRIVATE_H
