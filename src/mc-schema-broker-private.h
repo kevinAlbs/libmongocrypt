@@ -155,13 +155,27 @@ mc_schema_broker_append_listCollections_filter(const mc_schema_broker_t *sb, bso
     bool ok = false;
     bson_array_builder_t *bab = NULL;
 
-    if (sb->ll_len == 0) {
-        CLIENT_ERR("Unexpected: attempting to create listCollections filter but no schemas requested");
+    size_t num_unsatisfied = 0;
+    for (mc_schema_entry_t *se = sb->ll; se != NULL; se = se->next) {
+        if (!se->satisfied) {
+            num_unsatisfied++;
+        }
+    }
+
+    if (num_unsatisfied == 0) {
+        CLIENT_ERR("Unexpected: attempting to create listCollections filter but no schemas needed");
         goto fail;
-    } else if (sb->ll_len == 1) {
+    } else if (num_unsatisfied == 1) {
         // One request. Append as: { "name": <name> }
-        TRY_BSON_OR(BSON_APPEND_UTF8(out, "name", sb->ll->coll)) {
-            goto fail;
+        for (mc_schema_entry_t *se = sb->ll; se != NULL; se = se->next) {
+            if (se->satisfied) {
+                continue;
+            }
+
+            TRY_BSON_OR(BSON_APPEND_UTF8(out, "name", se->coll)) {
+                goto fail;
+            }
+            break;
         }
     } else {
         // Multiple requests. Append as: { "name": { "$in": [ <name1>, <name2>, ... ] } }
@@ -173,10 +187,12 @@ mc_schema_broker_append_listCollections_filter(const mc_schema_broker_t *sb, bso
             goto fail;
         }
         for (mc_schema_entry_t *se = sb->ll; se != NULL; se = se->next) {
+            if (se->satisfied) {
+                continue;
+            }
             TRY_BSON_OR(bson_array_builder_append_utf8(bab, se->coll, -1)) {
                 goto fail;
             }
-            // TODO: do not request schemas that are already satisfied.
         }
         TRY_BSON_OR(bson_append_array_builder_end(&in, bab)) {
             bab = NULL;

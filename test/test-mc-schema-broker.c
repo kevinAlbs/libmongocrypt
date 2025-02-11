@@ -81,6 +81,27 @@ static void test_mc_schema_broker_request(_mongocrypt_tester_t *tester) {
         mc_schema_broker_destroy(sb);
         mongocrypt_status_destroy(status);
     }
+
+    // Does not include satisfied collections in listCollections filter.
+    {
+        mongocrypt_status_t *status = mongocrypt_status_new();
+        mc_schema_broker_t *sb = mc_schema_broker_new();
+        ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "coll1", status), status);
+        ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "coll2", status), status);
+
+        // Satisfy db.coll1:
+        ASSERT_OK_STATUS(mc_schema_broker_satisfy_from_schemaMap(sb, TMP_BSON(BSON_STR({"db.coll1" : {}})), status),
+                         status);
+
+        // Check listCollections filter:
+        bson_t filter = BSON_INITIALIZER;
+        ASSERT_OK_STATUS(mc_schema_broker_append_listCollections_filter(sb, &filter, status), status);
+        ASSERT_EQUAL_BSON(TMP_BSON(BSON_STR({"name" : "coll2"})), &filter);
+        bson_destroy(&filter);
+
+        mc_schema_broker_destroy(sb);
+        mongocrypt_status_destroy(status);
+    }
 }
 
 static void test_mc_schema_broker_satisfy_from_collInfo(_mongocrypt_tester_t *tester) {
