@@ -696,14 +696,10 @@ static bool _create_markings_cmd_bson(mongocrypt_ctx_t *ctx, bson_t *out) {
         // mongocryptd. Drivers are expected to append $db in the RunCommand helper
         // used to send the command.
         bson_copy_to_excluding_noinit(&bson_view, out, "$db", NULL);
-        if (!mc_schema_broker_insert_encryptionInformation(ectx->sb,
-                                                           ectx->cmd_name,
-                                                           out,
-                                                           ctx->crypt->csfle.okay ? MC_TO_CSFLE : MC_TO_MONGOCRYPTD,
-                                                           ctx->status)) {
-            return _mongocrypt_ctx_fail(ctx);
-        }
-        if (!mc_schema_broker_append_csfleEncryptionSchemas(ectx->sb, ectx->cmd_name, out, ctx->status)) {
+        if (!mc_schema_broker_add_schemas_to_cmd(ectx->sb,
+                                                 out,
+                                                 ctx->crypt->csfle.okay ? MC_TO_CSFLE : MC_TO_MONGOCRYPTD,
+                                                 ctx->status)) {
             return _mongocrypt_ctx_fail(ctx);
         }
 
@@ -1583,11 +1579,7 @@ static bool _fle2_finalize(mongocrypt_ctx_t *ctx, mongocrypt_binary_t *out) {
     /* Append a new 'encryptionInformation'. */
     if (!result.must_omit && !ectx->used_empty_encryptedFields) {
         if (ectx->use_schema_broker) {
-            if (!mc_schema_broker_insert_encryptionInformation(ectx->sb,
-                                                               command_name,
-                                                               &converted,
-                                                               MC_TO_MONGOD,
-                                                               ctx->status)) {
+            if (!mc_schema_broker_add_schemas_to_cmd(ectx->sb, &converted, MC_TO_MONGOD, ctx->status)) {
                 bson_destroy(&converted);
                 return _mongocrypt_ctx_fail(ctx);
             }
