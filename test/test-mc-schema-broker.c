@@ -511,11 +511,12 @@ static void test_mc_schema_broker_satisfy_remaining_with_empty_schemas(_mongocry
     }
 }
 
-static void test_mc_schema_broker_append_csfleEncryptionSchemas(_mongocrypt_tester_t *tester) {
+static void test_mc_schema_broker_insert_csfleEncryptionSchemas(_mongocrypt_tester_t *tester) {
     bson_t *schemaMap = TEST_FILE_AS_BSON("./test/data/schema-broker/schemaMap.json");
     bson_t *jsonSchema = TEST_FILE_AS_BSON("./test/data/schema-broker/jsonSchema.json");
     bson_t *jsonSchema2 = TEST_FILE_AS_BSON("./test/data/schema-broker/jsonSchema2.json");
     bson_t *collinfo_jsonSchema = TEST_FILE_AS_BSON("./test/data/schema-broker/collinfo-jsonSchema.json");
+    bson_t *encryptedFields2 = TEST_FILE_AS_BSON("./test/data/schema-broker/encryptedFields2.json");
     bson_t *collinfo_encryptedFields2 = TEST_FILE_AS_BSON("./test/data/schema-broker/collinfo-encryptedFields2.json");
 
     // Appends one JSON schema as jsonSchema.
@@ -528,13 +529,12 @@ static void test_mc_schema_broker_append_csfleEncryptionSchemas(_mongocrypt_test
         ASSERT_OK_STATUS(mc_schema_broker_satisfy_from_schemaMap(sb, schemaMap, status), status);
         ASSERT(!mc_scheme_broker_need_more_schemas(sb));
 
-        bson_t got = BSON_INITIALIZER;
-        ASSERT_OK_STATUS(mc_schema_broker_append_csfleEncryptionSchemas(sb, "find", &got, status), status);
-        bson_t *expect = BCON_NEW("jsonSchema", BCON_DOCUMENT(jsonSchema), "isRemoteSchema", BCON_BOOL(false));
-        ASSERT_EQUAL_BSON(expect, &got);
-        bson_destroy(expect);
+        bson_t *cmd = TMP_BSON(BSON_STR({"find" : "coll"}));
+        ASSERT_OK_STATUS(mc_schema_broker_add_schemas_to_cmd(sb, cmd, MC_TO_MONGOCRYPTD, status), status);
+        bson_t *expect =
+            TMP_BSONF(BSON_STR({"find" : "coll", "jsonSchema" : MC_BSON, "isRemoteSchema" : false}), jsonSchema);
+        ASSERT_EQUAL_BSON(expect, cmd);
 
-        bson_destroy(&got);
         mc_schema_broker_destroy(sb);
         mongocrypt_status_destroy(status);
     }
@@ -550,29 +550,19 @@ static void test_mc_schema_broker_append_csfleEncryptionSchemas(_mongocrypt_test
         ASSERT_OK_STATUS(mc_schema_broker_satisfy_from_schemaMap(sb, schemaMap, status), status);
         ASSERT(!mc_scheme_broker_need_more_schemas(sb));
 
-        bson_t got = BSON_INITIALIZER;
-        ASSERT_OK_STATUS(mc_schema_broker_append_csfleEncryptionSchemas(sb, "find", &got, status), status);
-        bson_t *expect = BCON_NEW("csfleEncryptionSchemas",
-                                  "{",
-                                  "db.coll",
-                                  "{",
-                                  "schema",
-                                  BCON_DOCUMENT(jsonSchema),
-                                  "isRemoteSchema",
-                                  BCON_BOOL(false),
-                                  "}",
-                                  "db.coll2",
-                                  "{",
-                                  "schema",
-                                  BCON_DOCUMENT(jsonSchema2),
-                                  "isRemoteSchema",
-                                  BCON_BOOL(false),
-                                  "}",
-                                  "}");
-        ASSERT_EQUAL_BSON(expect, &got);
-        bson_destroy(expect);
+        bson_t *cmd = TMP_BSON(BSON_STR({"find" : "coll"}));
+        ASSERT_OK_STATUS(mc_schema_broker_add_schemas_to_cmd(sb, cmd, MC_TO_MONGOCRYPTD, status), status);
+        bson_t *expect = TMP_BSONF(BSON_STR({
+                                       "find" : "coll",
+                                       "csfleEncryptionSchemas" : {
+                                           "db.coll" : {"schema" : MC_BSON, "isRemoteSchema" : false},
+                                           "db.coll2" : {"schema" : MC_BSON, "isRemoteSchema" : false}
+                                       }
+                                   }),
+                                   jsonSchema,
+                                   jsonSchema2);
 
-        bson_destroy(&got);
+        ASSERT_EQUAL_BSON(expect, cmd);
         mc_schema_broker_destroy(sb);
         mongocrypt_status_destroy(status);
     }
@@ -581,21 +571,17 @@ static void test_mc_schema_broker_append_csfleEncryptionSchemas(_mongocrypt_test
     {
         mongocrypt_status_t *status = mongocrypt_status_new();
         mc_schema_broker_t *sb = mc_schema_broker_new();
-        _mongocrypt_cache_t cache;
-        _mongocrypt_cache_collinfo_init(&cache);
 
         ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "coll", status), status);
         ASSERT(mc_scheme_broker_need_more_schemas(sb));
-        ASSERT_OK_STATUS(mc_schema_broker_satisfy_remaining_with_empty_schemas(sb, &cache, status), status);
+        ASSERT_OK_STATUS(mc_schema_broker_satisfy_remaining_with_empty_schemas(sb, NULL, status), status);
         ASSERT(!mc_scheme_broker_need_more_schemas(sb));
 
-        bson_t got = BSON_INITIALIZER;
-        ASSERT_OK_STATUS(mc_schema_broker_append_csfleEncryptionSchemas(sb, "find", &got, status), status);
-        bson_t *expect = TMP_BSON(BSON_STR({"jsonSchema" : {}, "isRemoteSchema" : true}));
-        ASSERT_EQUAL_BSON(expect, &got);
+        bson_t *cmd = TMP_BSON(BSON_STR({"find" : "coll"}));
+        ASSERT_OK_STATUS(mc_schema_broker_add_schemas_to_cmd(sb, cmd, MC_TO_MONGOCRYPTD, status), status);
+        bson_t *expect = TMP_BSON(BSON_STR({"find" : "coll", "jsonSchema" : {}, "isRemoteSchema" : true}));
+        ASSERT_EQUAL_BSON(expect, cmd);
 
-        bson_destroy(&got);
-        _mongocrypt_cache_cleanup(&cache);
         mc_schema_broker_destroy(sb);
         mongocrypt_status_destroy(status);
     }
@@ -604,21 +590,32 @@ static void test_mc_schema_broker_append_csfleEncryptionSchemas(_mongocrypt_test
     {
         mongocrypt_status_t *status = mongocrypt_status_new();
         mc_schema_broker_t *sb = mc_schema_broker_new();
-        _mongocrypt_cache_t cache;
-        _mongocrypt_cache_collinfo_init(&cache);
 
         ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "coll", status), status);
         ASSERT(mc_scheme_broker_need_more_schemas(sb));
-        ASSERT_OK_STATUS(mc_schema_broker_satisfy_remaining_with_empty_schemas(sb, &cache, status), status);
+        ASSERT_OK_STATUS(mc_schema_broker_satisfy_remaining_with_empty_schemas(sb, NULL, status), status);
         ASSERT(!mc_scheme_broker_need_more_schemas(sb));
 
-        bson_t got = BSON_INITIALIZER;
-        ASSERT_OK_STATUS(mc_schema_broker_append_csfleEncryptionSchemas(sb, "bulkWrite", &got, status), status);
-        bson_t *expect = TMP_BSON(BSON_STR({}));
-        ASSERT_EQUAL_BSON(expect, &got);
+        bson_t *cmd = TMP_BSON(BSON_STR({"bulkWrite" : 1, "nsInfo" : [ {"ns" : "db.coll"} ]}));
+        ASSERT_OK_STATUS(mc_schema_broker_add_schemas_to_cmd(sb, cmd, MC_TO_MONGOCRYPTD, status), status);
+        bson_t *expect = TMP_BSON(BSON_STR({
+            "bulkWrite" : 1,
+            "nsInfo" : [ {
+                "ns" : "db.coll",
+                "encryptionInformation" : {
+                    "type" : {"$numberInt" : "1"},
+                    "schema" : {
+                        "db.coll" : {
+                            "escCollection" : "enxcol_.coll.esc",
+                            "ecocCollection" : "enxcol_.coll.ecoc",
+                            "fields" : []
+                        }
+                    }
+                }
+            } ]
+        }));
+        ASSERT_EQUAL_BSON(expect, cmd);
 
-        bson_destroy(&got);
-        _mongocrypt_cache_cleanup(&cache);
         mc_schema_broker_destroy(sb);
         mongocrypt_status_destroy(status);
     }
@@ -636,33 +633,21 @@ static void test_mc_schema_broker_append_csfleEncryptionSchemas(_mongocrypt_test
         // Satisfy db.coll with a schema:
         ASSERT_OK_STATUS(mc_schema_broker_satisfy_from_collinfo(sb, collinfo_jsonSchema, &cache, status), status);
         // Satisfy db.coll2 with empty schema.
-        ASSERT_OK_STATUS(mc_schema_broker_satisfy_remaining_with_empty_schemas(sb, &cache, status), status);
+        ASSERT_OK_STATUS(mc_schema_broker_satisfy_remaining_with_empty_schemas(sb, NULL, status), status);
         ASSERT(!mc_scheme_broker_need_more_schemas(sb));
 
-        bson_t got = BSON_INITIALIZER;
-        ASSERT_OK_STATUS(mc_schema_broker_append_csfleEncryptionSchemas(sb, "find", &got, status), status);
-        bson_t *expect = BCON_NEW("csfleEncryptionSchemas",
-                                  "{",
-                                  "db.coll",
-                                  "{",
-                                  "schema",
-                                  BCON_DOCUMENT(jsonSchema),
-                                  "isRemoteSchema",
-                                  BCON_BOOL(true),
-                                  "}",
-                                  "db.coll2",
-                                  "{",
-                                  "schema",
-                                  "{",
-                                  "}",
-                                  "isRemoteSchema",
-                                  BCON_BOOL(false),
-                                  "}",
-                                  "}");
-        ASSERT_EQUAL_BSON(expect, &got);
+        bson_t *cmd = TMP_BSON(BSON_STR({"find" : "coll"}));
+        ASSERT_OK_STATUS(mc_schema_broker_add_schemas_to_cmd(sb, cmd, MC_TO_MONGOCRYPTD, status), status);
+        bson_t *expect = TMP_BSONF(BSON_STR({
+                                       "find" : "coll",
+                                       "csfleEncryptionSchemas" : {
+                                           "db.coll" : {"schema" : MC_BSON, "isRemoteSchema" : true},
+                                           "db.coll2" : {"schema" : {}, "isRemoteSchema" : false}
+                                       }
+                                   }),
+                                   jsonSchema);
+        ASSERT_EQUAL_BSON(expect, cmd);
 
-        bson_destroy(expect);
-        bson_destroy(&got);
         _mongocrypt_cache_cleanup(&cache);
         mc_schema_broker_destroy(sb);
         mongocrypt_status_destroy(status);
@@ -672,27 +657,24 @@ static void test_mc_schema_broker_append_csfleEncryptionSchemas(_mongocrypt_test
     {
         mongocrypt_status_t *status = mongocrypt_status_new();
         mc_schema_broker_t *sb = mc_schema_broker_new();
-        _mongocrypt_cache_t cache;
-        _mongocrypt_cache_collinfo_init(&cache);
 
         ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "coll", status), status);
         ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "coll2", status), status);
         ASSERT(mc_scheme_broker_need_more_schemas(sb));
-        ASSERT_OK_STATUS(mc_schema_broker_satisfy_remaining_with_empty_schemas(sb, &cache, status), status);
+        ASSERT_OK_STATUS(mc_schema_broker_satisfy_remaining_with_empty_schemas(sb, NULL, status), status);
         ASSERT(!mc_scheme_broker_need_more_schemas(sb));
 
-        bson_t got = BSON_INITIALIZER;
-        ASSERT_OK_STATUS(mc_schema_broker_append_csfleEncryptionSchemas(sb, "find", &got, status), status);
+        bson_t *cmd = TMP_BSON(BSON_STR({"find" : "coll"}));
+        ASSERT_OK_STATUS(mc_schema_broker_add_schemas_to_cmd(sb, cmd, MC_TO_MONGOCRYPTD, status), status);
         bson_t *expect = TMP_BSON(BSON_STR({
+            "find" : "coll",
             "csfleEncryptionSchemas" : {
                 "db.coll" : {"schema" : {}, "isRemoteSchema" : false},
                 "db.coll2" : {"schema" : {}, "isRemoteSchema" : false}
             }
         }));
-        ASSERT_EQUAL_BSON(expect, &got);
+        ASSERT_EQUAL_BSON(expect, cmd);
 
-        bson_destroy(&got);
-        _mongocrypt_cache_cleanup(&cache);
         mc_schema_broker_destroy(sb);
         mongocrypt_status_destroy(status);
     }
@@ -713,12 +695,10 @@ static void test_mc_schema_broker_append_csfleEncryptionSchemas(_mongocrypt_test
         ASSERT_OK_STATUS(mc_schema_broker_satisfy_from_collinfo(sb, collinfo_encryptedFields2, &cache, status), status);
         ASSERT(!mc_scheme_broker_need_more_schemas(sb));
 
-        bson_t got = BSON_INITIALIZER;
-        ASSERT_FAILS_STATUS(
-            mc_schema_broker_append_csfleEncryptionSchemas(sb, "find", &got, status),
-            status,
-            "Collection 'coll2' has encryptedFields but collection 'coll' has a JSON schema configured.");
-        bson_destroy(&got);
+        bson_t *cmd = TMP_BSON(BSON_STR({"find" : "coll"}));
+        ASSERT_FAILS_STATUS(mc_schema_broker_add_schemas_to_cmd(sb, cmd, MC_TO_MONGOCRYPTD, status),
+                            status,
+                            "'coll2' has an encryptedFields configured, but collection 'coll' has a JSON schema");
         _mongocrypt_cache_cleanup(&cache);
         mc_schema_broker_destroy(sb);
         mongocrypt_status_destroy(status);
@@ -740,32 +720,34 @@ static void test_mc_schema_broker_append_csfleEncryptionSchemas(_mongocrypt_test
         ASSERT_OK_STATUS(mc_schema_broker_satisfy_remaining_with_empty_schemas(sb, &cache, status), status);
         ASSERT(!mc_scheme_broker_need_more_schemas(sb));
 
-        bson_t got = BSON_INITIALIZER;
-        ASSERT_OK_STATUS(mc_schema_broker_append_csfleEncryptionSchemas(sb, "find", &got, status), status);
-        ASSERT_EQUAL_BSON(TMP_BSON("{}"), &got);
+        bson_t *cmd = TMP_BSON(BSON_STR({"find" : "coll"}));
+        ASSERT_OK_STATUS(mc_schema_broker_add_schemas_to_cmd(sb, cmd, MC_TO_MONGOCRYPTD, status), status);
+        bson_t *expect = TMP_BSONF(BSON_STR({
+                                       "find" : "coll",
+                                       "encryptionInformation" : {
+                                           "type" : {"$numberInt" : "1"},
+                                           "schema" : {
+                                               "db.coll" : {
+                                                   "escCollection" : "enxcol_.coll.esc",
+                                                   "ecocCollection" : "enxcol_.coll.ecoc",
+                                                   "fields" : []
+                                               },
+                                               "db.coll2" : MC_BSON
+                                           }
+                                       }
+                                   }),
+                                   encryptedFields2);
+        ASSERT_EQUAL_BSON(expect, cmd);
 
-        bson_destroy(&got);
         _mongocrypt_cache_cleanup(&cache);
         mc_schema_broker_destroy(sb);
         mongocrypt_status_destroy(status);
     }
 }
 
-#define MC_STR_(...) #__VA_ARGS__
-// MC_STR stringifies arguments after macro expansion.
-// Useful to define JSON literals with %s formatters.
-// Use MC_STR_FMT to add a `%s` without clang-format formatting as `% s`.
-#define MC_STR(...) MC_STR_(__VA_ARGS__)
-
-// clang-format off
-#define MC_STR_FMT %s
-// clang-format on
-
 static void test_mc_schema_broker_insert_encryptionInformation(_mongocrypt_tester_t *tester) {
     bson_t *encryptedFields = TEST_FILE_AS_BSON("./test/data/schema-broker/encryptedFields.json");
-    char *encryptedFields_str = bson_as_canonical_extended_json(encryptedFields, NULL);
     bson_t *encryptedFields2 = TEST_FILE_AS_BSON("./test/data/schema-broker/encryptedFields2.json");
-    char *encryptedFields2_str = bson_as_canonical_extended_json(encryptedFields2, NULL);
     bson_t *encryptedFieldsMap =
         BCON_NEW("db.coll", BCON_DOCUMENT(encryptedFields), "db.coll2", BCON_DOCUMENT(encryptedFields2));
     bson_t *schemaMap = TEST_FILE_AS_BSON("./test/data/schema-broker/schemaMap.json");
@@ -775,17 +757,16 @@ static void test_mc_schema_broker_insert_encryptionInformation(_mongocrypt_teste
         mongocrypt_status_t *status = mongocrypt_status_new();
         mc_schema_broker_t *sb = mc_schema_broker_new();
 
-        bson_t *cmd = TMP_BSON(MC_STR({"find" : "coll"}));
-
         ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "coll", status), status);
         ASSERT(mc_scheme_broker_need_more_schemas(sb));
         ASSERT_OK_STATUS(mc_schema_broker_satisfy_from_encryptedFieldsMap(sb, encryptedFieldsMap, status), status);
         ASSERT(!mc_scheme_broker_need_more_schemas(sb));
 
-        ASSERT_OK_STATUS(mc_schema_broker_insert_encryptionInformation(sb, "find", cmd, MC_TO_MONGOD, status), status);
-        bson_t *expect = TMP_BSON(
-            MC_STR({"find" : "coll", "encryptionInformation" : {"type" : 1, "schema" : {"db.coll" : MC_STR_FMT}}}),
-            encryptedFields_str);
+        bson_t *cmd = TMP_BSON(BSON_STR({"find" : "coll"}));
+        ASSERT_OK_STATUS(mc_schema_broker_add_schemas_to_cmd(sb, cmd, MC_TO_MONGOD, status), status);
+        bson_t *expect = TMP_BSONF(
+            BSON_STR({"find" : "coll", "encryptionInformation" : {"type" : 1, "schema" : {"db.coll" : MC_BSON}}}),
+            encryptedFields);
         ASSERT_EQUAL_BSON(expect, cmd);
 
         mc_schema_broker_destroy(sb);
@@ -797,22 +778,21 @@ static void test_mc_schema_broker_insert_encryptionInformation(_mongocrypt_teste
         mongocrypt_status_t *status = mongocrypt_status_new();
         mc_schema_broker_t *sb = mc_schema_broker_new();
 
-        bson_t *cmd = TMP_BSON(MC_STR({"find" : "coll"}));
-
         ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "coll", status), status);
         ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "coll2", status), status);
         ASSERT(mc_scheme_broker_need_more_schemas(sb));
         ASSERT_OK_STATUS(mc_schema_broker_satisfy_from_encryptedFieldsMap(sb, encryptedFieldsMap, status), status);
         ASSERT(!mc_scheme_broker_need_more_schemas(sb));
 
-        ASSERT_OK_STATUS(mc_schema_broker_insert_encryptionInformation(sb, "find", cmd, MC_TO_MONGOD, status), status);
-        bson_t *expect = TMP_BSON(
-            MC_STR({
-                "find" : "coll",
-                "encryptionInformation" : {"type" : 1, "schema" : {"db.coll" : MC_STR_FMT, "db.coll2" : MC_STR_FMT}}
-            }),
-            encryptedFields_str,
-            encryptedFields2_str);
+        bson_t *cmd = TMP_BSON(BSON_STR({"find" : "coll"}));
+        ASSERT_OK_STATUS(mc_schema_broker_add_schemas_to_cmd(sb, cmd, MC_TO_MONGOD, status), status);
+        bson_t *expect =
+            TMP_BSONF(BSON_STR({
+                          "find" : "coll",
+                          "encryptionInformation" : {"type" : 1, "schema" : {"db.coll" : MC_BSON, "db.coll2" : MC_BSON}}
+                      }),
+                      encryptedFields,
+                      encryptedFields2);
         ASSERT_EQUAL_BSON(expect, cmd);
 
         mc_schema_broker_destroy(sb);
@@ -824,15 +804,14 @@ static void test_mc_schema_broker_insert_encryptionInformation(_mongocrypt_teste
         mongocrypt_status_t *status = mongocrypt_status_new();
         mc_schema_broker_t *sb = mc_schema_broker_new();
 
-        bson_t *cmd = TMP_BSON(MC_STR({"find" : "coll"}));
-
         ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "coll", status), status);
         ASSERT(mc_scheme_broker_need_more_schemas(sb));
         ASSERT_OK_STATUS(mc_schema_broker_satisfy_from_schemaMap(sb, schemaMap, status), status);
         ASSERT(!mc_scheme_broker_need_more_schemas(sb));
 
-        ASSERT_OK_STATUS(mc_schema_broker_insert_encryptionInformation(sb, "find", cmd, MC_TO_MONGOD, status), status);
-        bson_t *expect = TMP_BSON(MC_STR({"find" : "coll"}), encryptedFields_str);
+        bson_t *cmd = TMP_BSON(BSON_STR({"find" : "coll"}));
+        ASSERT_OK_STATUS(mc_schema_broker_add_schemas_to_cmd(sb, cmd, MC_TO_MONGOD, status), status);
+        bson_t *expect = TMP_BSON(BSON_STR({"find" : "coll"}));
         ASSERT_EQUAL_BSON(expect, cmd);
 
         mc_schema_broker_destroy(sb);
@@ -844,22 +823,20 @@ static void test_mc_schema_broker_insert_encryptionInformation(_mongocrypt_teste
         mongocrypt_status_t *status = mongocrypt_status_new();
         mc_schema_broker_t *sb = mc_schema_broker_new();
 
-        bson_t *cmd = TMP_BSON(MC_STR({"bulkWrite" : "coll", "nsInfo" : [ {"ns" : "db.coll"} ]}));
-
         ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "coll", status), status);
         ASSERT(mc_scheme_broker_need_more_schemas(sb));
         ASSERT_OK_STATUS(mc_schema_broker_satisfy_from_encryptedFieldsMap(sb, encryptedFieldsMap, status), status);
         ASSERT(!mc_scheme_broker_need_more_schemas(sb));
 
-        ASSERT_OK_STATUS(mc_schema_broker_insert_encryptionInformation(sb, "bulkWrite", cmd, MC_TO_MONGOD, status),
-                         status);
-        bson_t *expect = TMP_BSON(
-            MC_STR({
+        bson_t *cmd = TMP_BSON(BSON_STR({"bulkWrite" : "coll", "nsInfo" : [ {"ns" : "db.coll"} ]}));
+        ASSERT_OK_STATUS(mc_schema_broker_add_schemas_to_cmd(sb, cmd, MC_TO_MONGOD, status), status);
+        bson_t *expect = TMP_BSONF(
+            BSON_STR({
                 "bulkWrite" : "coll",
                 "nsInfo" :
-                    [ {"ns" : "db.coll", "encryptionInformation" : {"type" : 1, "schema" : {"db.coll" : MC_STR_FMT}}} ]
+                    [ {"ns" : "db.coll", "encryptionInformation" : {"type" : 1, "schema" : {"db.coll" : MC_BSON}}} ]
             }),
-            encryptedFields_str);
+            encryptedFields);
         ASSERT_EQUAL_BSON(expect, cmd);
 
         mc_schema_broker_destroy(sb);
@@ -871,32 +848,29 @@ static void test_mc_schema_broker_insert_encryptionInformation(_mongocrypt_teste
         mongocrypt_status_t *status = mongocrypt_status_new();
         mc_schema_broker_t *sb = mc_schema_broker_new();
 
-        bson_t *cmd = TMP_BSON(MC_STR({"bulkWrite" : "coll", "nsInfo" : [ {"ns" : "db.coll"} ]}));
-
         ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "coll", status), status);
         ASSERT(mc_scheme_broker_need_more_schemas(sb));
         ASSERT_OK_STATUS(mc_schema_broker_satisfy_remaining_with_empty_schemas(sb, NULL, status), status);
         ASSERT(!mc_scheme_broker_need_more_schemas(sb));
 
-        ASSERT_OK_STATUS(mc_schema_broker_insert_encryptionInformation(sb, "bulkWrite", cmd, MC_TO_MONGOD, status),
-                         status);
-        bson_t *expect = TMP_BSON(MC_STR({
-                                      "bulkWrite" : "coll",
-                                      "nsInfo" : [ {
-                                          "ns" : "db.coll",
-                                          "encryptionInformation" : {
-                                              "type" : {"$numberInt" : "1"},
-                                              "schema" : {
-                                                  "db.coll" : {
-                                                      "escCollection" : "enxcol_.coll.esc",
-                                                      "ecocCollection" : "enxcol_.coll.ecoc",
-                                                      "fields" : []
-                                                  }
-                                              }
-                                          }
-                                      } ]
-                                  }),
-                                  encryptedFields_str);
+        bson_t *cmd = TMP_BSON(BSON_STR({"bulkWrite" : "coll", "nsInfo" : [ {"ns" : "db.coll"} ]}));
+        ASSERT_OK_STATUS(mc_schema_broker_add_schemas_to_cmd(sb, cmd, MC_TO_MONGOD, status), status);
+        bson_t *expect = TMP_BSON(BSON_STR({
+            "bulkWrite" : "coll",
+            "nsInfo" : [ {
+                "ns" : "db.coll",
+                "encryptionInformation" : {
+                    "type" : {"$numberInt" : "1"},
+                    "schema" : {
+                        "db.coll" : {
+                            "escCollection" : "enxcol_.coll.esc",
+                            "ecocCollection" : "enxcol_.coll.ecoc",
+                            "fields" : []
+                        }
+                    }
+                }
+            } ]
+        }));
         ASSERT_EQUAL_BSON(expect, cmd);
 
         mc_schema_broker_destroy(sb);
@@ -908,20 +882,18 @@ static void test_mc_schema_broker_insert_encryptionInformation(_mongocrypt_teste
         mongocrypt_status_t *status = mongocrypt_status_new();
         mc_schema_broker_t *sb = mc_schema_broker_new();
 
-        bson_t *cmd = TMP_BSON(MC_STR({"explain" : {"find" : "coll"}}));
-
         ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "coll", status), status);
         ASSERT(mc_scheme_broker_need_more_schemas(sb));
         ASSERT_OK_STATUS(mc_schema_broker_satisfy_from_encryptedFieldsMap(sb, encryptedFieldsMap, status), status);
         ASSERT(!mc_scheme_broker_need_more_schemas(sb));
 
-        ASSERT_OK_STATUS(mc_schema_broker_insert_encryptionInformation(sb, "explain", cmd, MC_TO_MONGOCRYPTD, status),
-                         status);
-        bson_t *expect = TMP_BSON(MC_STR({
-                                      "explain" : {"find" : "coll"},
-                                      "encryptionInformation" : {"type" : 1, "schema" : {"db.coll" : MC_STR_FMT}}
-                                  }),
-                                  encryptedFields_str);
+        bson_t *cmd = TMP_BSON(BSON_STR({"explain" : {"find" : "coll"}}));
+        ASSERT_OK_STATUS(mc_schema_broker_add_schemas_to_cmd(sb, cmd, MC_TO_MONGOCRYPTD, status), status);
+        bson_t *expect = TMP_BSONF(BSON_STR({
+                                       "explain" : {"find" : "coll"},
+                                       "encryptionInformation" : {"type" : 1, "schema" : {"db.coll" : MC_BSON}}
+                                   }),
+                                   encryptedFields);
         ASSERT_EQUAL_BSON(expect, cmd);
 
         mc_schema_broker_destroy(sb);
@@ -933,21 +905,18 @@ static void test_mc_schema_broker_insert_encryptionInformation(_mongocrypt_teste
         mongocrypt_status_t *status = mongocrypt_status_new();
         mc_schema_broker_t *sb = mc_schema_broker_new();
 
-        bson_t *cmd = TMP_BSON(MC_STR({"explain" : {"find" : "coll"}}));
-
         ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "coll", status), status);
         ASSERT(mc_scheme_broker_need_more_schemas(sb));
         ASSERT_OK_STATUS(mc_schema_broker_satisfy_from_encryptedFieldsMap(sb, encryptedFieldsMap, status), status);
         ASSERT(!mc_scheme_broker_need_more_schemas(sb));
 
-        ASSERT_OK_STATUS(mc_schema_broker_insert_encryptionInformation(sb, "explain", cmd, MC_TO_MONGOD, status),
-                         status);
-        bson_t *expect = TMP_BSON(
-            MC_STR({
-                "explain" :
-                    {"find" : "coll", "encryptionInformation" : {"type" : 1, "schema" : {"db.coll" : MC_STR_FMT}}}
+        bson_t *cmd = TMP_BSON(BSON_STR({"explain" : {"find" : "coll"}}));
+        ASSERT_OK_STATUS(mc_schema_broker_add_schemas_to_cmd(sb, cmd, MC_TO_MONGOD, status), status);
+        bson_t *expect = TMP_BSONF(
+            BSON_STR({
+                "explain" : {"find" : "coll", "encryptionInformation" : {"type" : 1, "schema" : {"db.coll" : MC_BSON}}}
             }),
-            encryptedFields_str);
+            encryptedFields);
         ASSERT_EQUAL_BSON(expect, cmd);
 
         mc_schema_broker_destroy(sb);
@@ -958,42 +927,37 @@ static void test_mc_schema_broker_insert_encryptionInformation(_mongocrypt_teste
     {
         mongocrypt_status_t *status = mongocrypt_status_new();
         mc_schema_broker_t *sb = mc_schema_broker_new();
-        _mongocrypt_cache_t cache;
-        _mongocrypt_cache_collinfo_init(&cache);
 
         ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "coll", status), status);
         ASSERT_OK_STATUS(mc_schema_broker_request(sb, "db", "noschema", status), status);
         ASSERT(mc_scheme_broker_need_more_schemas(sb));
         ASSERT_OK_STATUS(mc_schema_broker_satisfy_from_encryptedFieldsMap(sb, encryptedFieldsMap, status), status);
-        ASSERT_OK_STATUS(mc_schema_broker_satisfy_remaining_with_empty_schemas(sb, &cache, status), status);
+        ASSERT_OK_STATUS(mc_schema_broker_satisfy_remaining_with_empty_schemas(sb, NULL, status), status);
         ASSERT(!mc_scheme_broker_need_more_schemas(sb));
 
-        bson_t *cmd = TMP_BSON(MC_STR({"find" : "coll"}));
-        ASSERT_OK_STATUS(mc_schema_broker_insert_encryptionInformation(sb, "find", cmd, MC_TO_MONGOD, status), status);
-        bson_t *expect = TMP_BSON(MC_STR({
-                                      "find" : "coll",
-                                      "encryptionInformation" : {
-                                          "type" : 1,
-                                          "schema" : {
-                                              "db.coll" : MC_STR_FMT,
-                                              "db.noschema" : {
-                                                  "escCollection" : "enxcol_.noschema.esc",
-                                                  "ecocCollection" : "enxcol_.noschema.ecoc",
-                                                  "fields" : []
-                                              }
-                                          }
-                                      }
-                                  }),
-                                  encryptedFields_str);
+        bson_t *cmd = TMP_BSON(BSON_STR({"find" : "coll"}));
+        ASSERT_OK_STATUS(mc_schema_broker_add_schemas_to_cmd(sb, cmd, MC_TO_MONGOD, status), status);
+        bson_t *expect = TMP_BSONF(BSON_STR({
+                                       "find" : "coll",
+                                       "encryptionInformation" : {
+                                           "type" : 1,
+                                           "schema" : {
+                                               "db.coll" : MC_BSON,
+                                               "db.noschema" : {
+                                                   "escCollection" : "enxcol_.noschema.esc",
+                                                   "ecocCollection" : "enxcol_.noschema.ecoc",
+                                                   "fields" : []
+                                               }
+                                           }
+                                       }
+                                   }),
+                                   encryptedFields);
         ASSERT_EQUAL_BSON(expect, cmd);
 
         mc_schema_broker_destroy(sb);
-        _mongocrypt_cache_cleanup(&cache);
         mongocrypt_status_destroy(status);
     }
 
-    bson_free(encryptedFields2_str);
-    bson_free(encryptedFields_str);
     bson_destroy(encryptedFieldsMap);
 }
 
@@ -1106,7 +1070,7 @@ void _mongocrypt_tester_install_mc_schema_broker(_mongocrypt_tester_t *tester) {
     INSTALL_TEST(test_mc_schema_broker_satisfy_from_schemaMap);
     INSTALL_TEST(test_mc_schema_broker_satisfy_from_encryptedFieldsMap);
     INSTALL_TEST(test_mc_schema_broker_satisfy_remaining_with_empty_schemas);
-    INSTALL_TEST(test_mc_schema_broker_append_csfleEncryptionSchemas);
+    INSTALL_TEST(test_mc_schema_broker_insert_csfleEncryptionSchemas);
     INSTALL_TEST(test_mc_schema_broker_insert_encryptionInformation);
     INSTALL_TEST(test_mc_schema_broker_get_encryptedFields);
     INSTALL_TEST(test_mc_schema_broker_satisfy_from_create_or_collMod);
