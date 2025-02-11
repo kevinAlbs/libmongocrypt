@@ -916,6 +916,13 @@ static void _test_setopt_kms_providers(_mongocrypt_tester_t *tester) {
     }
 }
 
+static void test_tmp_bsonf(_mongocrypt_tester_t *tester) {
+    bson_t *one = TMP_BSONF("{'foo' : MC_STR}", "bar");
+    ASSERT_EQUAL_BSON(one, TMP_BSONF("{'foo': 'bar'}"));
+    bson_t *two = TMP_BSONF("{'blah': MC_BSON}", one);
+    ASSERT_EQUAL_BSON(two, TMP_BSONF("{'blah': {'foo': 'bar'}}"));
+}
+
 bool _aes_ctr_is_supported_by_os = true;
 
 int main(int argc, char **argv) {
@@ -992,6 +999,7 @@ int main(int argc, char **argv) {
     _mongocrypt_tester_install_mc_cmp(&tester);
     _mongocrypt_tester_install_text_search_str_encode(&tester);
     _mongocrypt_tester_install_mc_schema_broker(&tester);
+    _mongocrypt_tester_install(&tester, "test_tmp_bsonf", test_tmp_bsonf, CRYPTO_OPTIONAL);
 
 #ifdef MONGOCRYPT_ENABLE_CRYPTO_COMMON_CRYPTO
     char osversion[32];

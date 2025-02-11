@@ -233,7 +233,7 @@ bson_t *_mongocrypt_tester_bson_from_json(_mongocrypt_tester_t *tester, const ch
 // Examples:
 // bson_t *b = TMP_BSONF(BSON_STR({"foo": MC_STR}), "bar"); // { "foo" : "bar" }
 // bson_t *b2 = TMP_BSONF(BSON_STR({"buzz": MC_BSON }), b); // { "buzz": { "foo": "bar" }}
-static bson_t *tmp_bsonf(_mongocrypt_tester_t *tester, const char *fmt, ...);
+bson_t *tmp_bsonf(_mongocrypt_tester_t *tester, const char *fmt, ...);
 #define TMP_BSONF(...) tmp_bsonf(tester, __VA_ARGS__)
 
 /* Get a temporary bson_t from a JSON file. Do not free it. */
