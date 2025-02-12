@@ -5064,7 +5064,7 @@ static void _test_lookup(_mongocrypt_tester_t *tester) {
 
             ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_COLLINFO);
             {
-                mongocrypt_binary_t *expect = TEST_BSON(BSON_STR({"name" : {"$in" : ["c2"]}}));
+                mongocrypt_binary_t *expect = TEST_BSON(BSON_STR({"name" : "c2"}));
                 mongocrypt_binary_t *got = mongocrypt_binary_new();
                 ASSERT_OK(mongocrypt_ctx_mongo_op(ctx, got), ctx);
                 ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
@@ -5138,10 +5138,7 @@ static void _test_lookup(_mongocrypt_tester_t *tester) {
 
             // Feed both needed schemas.
             ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, TF("02-collInfo-c1.json")), ctx);
-            ASSERT_FAILS(mongocrypt_ctx_mongo_feed(ctx, TF("02-collInfo-v1.json")),
-                         ctx,
-                         "cannot auto encrypt with view");
-            ASSERT_FAILS(mongocrypt_ctx_mongo_done(ctx), ctx, "cannot auto encrypt with view");
+            ASSERT_FAILS(mongocrypt_ctx_mongo_feed(ctx, TF("02-collInfo-v1.json")), ctx, "cannot auto encrypt a view");
         }
 
         mongocrypt_ctx_destroy(ctx);
@@ -5161,7 +5158,7 @@ static void _test_lookup(_mongocrypt_tester_t *tester) {
             // Feed schema for "c2" twice.
             ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, TF("02-collInfo-c1.json")), ctx);
             ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, TF("02-collInfo-c2.json")), ctx);
-            ASSERT_FAILS(mongocrypt_ctx_mongo_feed(ctx, TF("02-collInfo-c2.json")), ctx, "got duplicate schemas");
+            ASSERT_FAILS(mongocrypt_ctx_mongo_feed(ctx, TF("02-collInfo-c2.json")), ctx, "unexpected duplicate");
         }
 
         mongocrypt_ctx_destroy(ctx);
@@ -5180,7 +5177,7 @@ static void _test_lookup(_mongocrypt_tester_t *tester) {
         ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_COLLINFO);
         {
             ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, TF("02-collInfo-c1.json")), ctx);
-            ASSERT_FAILS(mongocrypt_ctx_mongo_feed(ctx, TF("02-collInfo-c3.json")), ctx, "given unexpected schema");
+            ASSERT_FAILS(mongocrypt_ctx_mongo_feed(ctx, TF("02-collInfo-c3.json")), ctx, "got unexpected collinfo");
         }
 
         mongocrypt_ctx_destroy(ctx);
@@ -5497,7 +5494,7 @@ static void _test_lookup(_mongocrypt_tester_t *tester) {
 
             ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_COLLINFO);
             {
-                mongocrypt_binary_t *expect = TEST_BSON(BSON_STR({"name" : {"$in" : ["c2"]}}));
+                mongocrypt_binary_t *expect = TEST_BSON(BSON_STR({"name" : "c2"}));
                 mongocrypt_binary_t *got = mongocrypt_binary_new();
                 ASSERT_OK(mongocrypt_ctx_mongo_op(ctx, got), ctx);
                 ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
@@ -5521,6 +5518,7 @@ static void _test_lookup(_mongocrypt_tester_t *tester) {
         }
         mongocrypt_destroy(crypt);
     }
+
 #undef TF
 
 // Test $lookup with mixed: QE + CSFLE
@@ -5547,14 +5545,10 @@ static void _test_lookup(_mongocrypt_tester_t *tester) {
 
         ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_MARKINGS);
         {
-            mongocrypt_binary_t *expect = TF("03-cmd-to-mongocryptd.json");
             mongocrypt_binary_t *got = mongocrypt_binary_new();
-            ASSERT_OK(mongocrypt_ctx_mongo_op(ctx, got), ctx);
-            ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
+            ASSERT_FAILS(mongocrypt_ctx_mongo_op(ctx, got), ctx, "currently not supported");
             mongocrypt_binary_destroy(got);
         }
-
-        // mongocryptd is expected to error.
 
         mongocrypt_ctx_destroy(ctx);
         mongocrypt_destroy(crypt);
@@ -5749,14 +5743,10 @@ static void _test_lookup(_mongocrypt_tester_t *tester) {
 
         ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_MARKINGS);
         {
-            mongocrypt_binary_t *expect = TF("03-cmd-to-mongocryptd.json");
             mongocrypt_binary_t *got = mongocrypt_binary_new();
-            ASSERT_OK(mongocrypt_ctx_mongo_op(ctx, got), ctx);
-            ASSERT_MONGOCRYPT_BINARY_EQUAL_BSON(expect, got);
+            ASSERT_FAILS(mongocrypt_ctx_mongo_op(ctx, got), ctx, "This is currently not supported");
             mongocrypt_binary_destroy(got);
         }
-
-        // mongocryptd is expected to error.
 
         mongocrypt_ctx_destroy(ctx);
         mongocrypt_destroy(crypt);
@@ -6067,4 +6057,5 @@ void _mongocrypt_tester_install_ctx_encrypt(_mongocrypt_tester_t *tester) {
     INSTALL_TEST(_test_fle2_encrypted_field_config_with_bad_str_encode_version);
     INSTALL_TEST(_test_fle2_encrypted_fields_with_unmatching_str_encode_version);
     INSTALL_TEST(_test_fle2_collinfo_with_bad_str_encode_version);
+    INSTALL_TEST(_test_lookup);
 }
