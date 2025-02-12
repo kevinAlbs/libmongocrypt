@@ -106,117 +106,121 @@ bool is_whitespace(char c) {
     return c == ' ' || c == '\t' || c == '\n' || c == '\r';
 }
 
-// Function to remove comments from JSONC
-void remove_comments(FILE *input, FILE *output) {
-    char buffer[BUFFER_SIZE];
+static char *read_file(const char *path, size_t *outlen) {
+    size_t total_read = 0;
+    int fd = open(path, O_RDONLY);
+    if (fd < 0) {
+        TEST_ERROR("failed to open: %s. Error: %s\n", path, strerror(errno));
+    }
+    ssize_t n_read;
+    char storage[512];
+    char *contents = NULL;
+    while ((n_read = read(fd, storage, sizeof(storage))) > 0) {
+        contents = bson_realloc(contents, total_read + n_read + 1);
+        memcpy(contents + total_read, storage, n_read);
+        total_read += n_read;
+    }
+
+    contents[total_read] = '\0';
+
+    if (n_read < 0) {
+        TEST_ERROR("failed to read: %s. Error: %s\n", path, strerror(errno));
+    }
+
+    if (0 != close(fd)) {
+        TEST_ERROR("failed to close: %s. Error: %s\n", path, strerror(errno));
+    }
+
+    if (outlen) {
+        *outlen = total_read;
+    }
+
+    return contents;
+}
+
+// `jsonc_to_json` remove comments from JSONC and returns an allocated JSON string.
+static char *jsonc_to_json(const char *jsonc, size_t jsonc_len) {
     bool in_string = false;
     bool in_single_line_comment = false;
     bool in_multi_line_comment = false;
-    while (fgets(buffer, BUFFER_SIZE, input)) {
-        for (int i = 0; buffer[i] != '\0'; i++) {
-            char c = buffer[i];
-            if (in_single_line_comment) {
-                if (c == '\n') {
-                    in_single_line_comment = false;
-                    fputc(c, output);
-                }
-                continue;
+    char *json = bson_malloc(jsonc_len); // May be larger than needed if comments are removed.
+    size_t json_idx = 0;
+
+    for (size_t jsonc_idx = 0; jsonc_idx < jsonc_len; jsonc_idx++) {
+        char c = jsonc[jsonc_idx];
+        if (in_single_line_comment) {
+            if (c == '\n') {
+                in_single_line_comment = false;
+                json[json_idx++] = c;
             }
-            if (in_multi_line_comment) {
-                if (c == '*' && buffer[i + 1] == '/') {
-                    in_multi_line_comment = false;
-                    i++; // Skip the '/'
-                }
-                continue;
+            continue;
+        }
+        if (in_multi_line_comment) {
+            if (c == '*' && jsonc[jsonc_idx + 1] == '/') {
+                in_multi_line_comment = false;
+                jsonc_idx++; // Skip the '/'
             }
-            if (in_string) {
-                if (c == '\\' && buffer[i + 1] == '"') {
-                    fputc(c, output);
-                    i++; // Skip the escaped quote
-                } else if (c == '"') {
-                    in_string = false;
-                }
-                fputc(c, output);
-                continue;
+            continue;
+        }
+        if (in_string) {
+            if (c == '\\' && jsonc[jsonc_idx + 1] == '"') {
+                json[json_idx++] = c;
+                jsonc_idx++; // Skip the escaped quote
+            } else if (c == '"') {
+                in_string = false;
             }
-            if (c == '"') {
-                in_string = true;
-                fputc(c, output);
-                continue;
-            }
-            if (c == '/' && buffer[i + 1] == '/') {
-                in_single_line_comment = true;
-                i++; // Skip the second '/'
-                continue;
-            }
-            if (c == '/' && buffer[i + 1] == '*') {
-                in_multi_line_comment = true;
-                i++; // Skip the '*'
-                continue;
-            }
-            if (!is_whitespace(c)) {
-                fputc(c, output);
-            }
+            json[json_idx++] = c;
+            continue;
+        }
+        if (c == '"') {
+            in_string = true;
+            json[json_idx++] = c;
+            continue;
+        }
+        if (c == '/' && jsonc[jsonc_idx + 1] == '/') {
+            in_single_line_comment = true;
+            jsonc_idx++; // Skip the second '/'
+            continue;
+        }
+        if (c == '/' && jsonc[jsonc_idx + 1] == '*') {
+            in_multi_line_comment = true;
+            jsonc_idx++; // Skip the '*'
+            continue;
+        }
+        if (!is_whitespace(c)) {
+            json[json_idx++] = c;
         }
     }
+    json[json_idx] = '\0';
+    return json;
 }
 
 static void _load_jsonc(_mongocrypt_tester_t *tester, const char *path) {
+    // Strip comments:
+    size_t jsonc_len;
+    char *jsonc = read_file(path, &jsonc_len);
+    char *json = jsonc_to_json(jsonc, jsonc_len);
+
+    // Parse as JSON:
     bson_t as_bson;
-    _mongocrypt_buffer_t *buf;
-
-    // Strip comments.
-    char *stripped_path = bson_strdup_printf("%s.stripped", path);
-    {
-        FILE *stripped_file = fopen(stripped_path, "w");
-        ASSERT(stripped_file);
-
-        FILE *input_file = fopen(path, "r");
-        ASSERT(input_file);
-
-        remove_comments(input_file, stripped_file);
-        fclose(stripped_file);
-        fclose(input_file);
+    bson_error_t error;
+    if (!bson_init_from_json(&as_bson, json, -1, &error)) {
+        TEST_ERROR("Failed to parse %s: %s", path, error.message);
     }
+    bson_free(jsonc);
+    bson_free(json);
 
-    // Parse as JSON.
-    _load_json_as_bson(stripped_path, &as_bson);
-    bson_free(stripped_path);
-    unlink(stripped_path);
-
-    buf = &tester->file_bufs[tester->file_count];
+    // Store in temporary test buffer:
+    _mongocrypt_buffer_t *buf = &tester->file_bufs[tester->file_count];
     _mongocrypt_buffer_steal_from_bson(buf, &as_bson);
     tester->file_paths[tester->file_count] = bson_strdup(path);
     TEST_DATA_COUNT_INC(tester->file_count);
 }
 
 static void _load_http(_mongocrypt_tester_t *tester, const char *path) {
-    int fd;
-    char *contents;
-    int n_read;
-    int filesize;
-    char storage[512];
-    int i;
-    _mongocrypt_buffer_t *buf;
-
-    filesize = 0;
-    contents = NULL;
-    fd = open(path, O_RDONLY);
-    while ((n_read = read(fd, storage, sizeof(storage))) > 0) {
-        filesize += n_read;
-        /* Append storage. Performance does not matter. */
-        contents = bson_realloc(contents, filesize);
-        memcpy(contents + (filesize - n_read), storage, n_read);
-    }
-
-    if (n_read < 0) {
-        TEST_STDERR_PRINTF("failed to read %s\n", path);
-        abort();
-    }
-
-    close(fd);
-
-    buf = &tester->file_bufs[tester->file_count];
+    size_t filesize;
+    char *contents = read_file(path, &filesize);
+    _mongocrypt_buffer_t *buf = &tester->file_bufs[tester->file_count];
     /* copy and fix newlines */
     _mongocrypt_buffer_init(buf);
     /* allocate twice the size since \n may become \r\n */
@@ -225,7 +229,7 @@ static void _load_http(_mongocrypt_tester_t *tester, const char *path) {
 
     buf->len = 0;
     buf->owned = true;
-    for (i = 0; i < filesize; i++) {
+    for (size_t i = 0; i < filesize; i++) {
         if (contents[i] == '\n' && contents[i - 1] != '\r') {
             buf->data[buf->len++] = '\r';
         }
@@ -1020,6 +1024,13 @@ static void test_tmp_bsonf(_mongocrypt_tester_t *tester) {
     ASSERT_EQUAL_BSON(two, TMP_BSONF("{'blah': {'foo': 'bar'}}"));
 }
 
+static void test_jsonc_to_json(_mongocrypt_tester_t *tester) {
+    const char *input = "{ \"foo\" : /* comment */ \"bar\"}";
+    char *output = jsonc_to_json(input, strlen(input));
+    ASSERT_STREQUAL(output, "blah");
+    bson_free(output);
+}
+
 bool _aes_ctr_is_supported_by_os = true;
 
 int main(int argc, char **argv) {
@@ -1098,6 +1109,7 @@ int main(int argc, char **argv) {
     _mongocrypt_tester_install_unicode_fold(&tester);
     _mongocrypt_tester_install(&tester, "test_tmp_bsonf", test_tmp_bsonf, CRYPTO_OPTIONAL);
     _mongocrypt_tester_install_mc_schema_broker(&tester);
+    _mongocrypt_tester_install(&tester, "test_jsonc_to_json", test_jsonc_to_json, CRYPTO_OPTIONAL);
 
 #ifdef MONGOCRYPT_ENABLE_CRYPTO_COMMON_CRYPTO
     char osversion[32];
