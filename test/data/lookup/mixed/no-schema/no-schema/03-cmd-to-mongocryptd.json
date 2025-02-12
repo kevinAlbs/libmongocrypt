@@ -16,6 +16,14 @@
       }
    ],
    "cursor": {},
-   "jsonSchema": {},
-   "isRemoteSchema": true
+   "csfleEncryptionSchemas": {
+      "db.c1": {
+         "schema": {},
+         "isRemoteSchema": false
+      },
+      "db.c2": {
+         "schema": {},
+         "isRemoteSchema": false
+      }
+   }
 }

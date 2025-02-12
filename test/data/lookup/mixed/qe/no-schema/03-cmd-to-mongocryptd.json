@@ -36,10 +36,17 @@
                   "bsonType": "string",
                   "queries": {
                      "queryType": "equality",
-                     "contention": 0
+                     "contention": {
+                        "$numberInt": "0"
+                     }
                   }
                }
             ]
+         },
+         "db.c2": {
+            "escCollection": "enxcol_.c2.esc",
+            "ecocCollection": "enxcol_.c2.ecoc",
+            "fields": []
          }
       }
    }

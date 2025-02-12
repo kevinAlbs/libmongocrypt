@@ -38,6 +38,10 @@
             "bsonType": "object"
          },
          "isRemoteSchema": true
+      },
+      "db.c2": {
+         "schema": {},
+         "isRemoteSchema": false
       }
    }
 }

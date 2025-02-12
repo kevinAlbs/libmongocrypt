@@ -21,12 +21,16 @@
         }
     ],
     "cursor": {},
-    // encryptionInformation is included since there is an encrypted payload.
     "encryptionInformation": {
         "type": {
             "$numberInt": "1"
         },
         "schema": {
+            "db.c1": {
+                "escCollection": "enxcol_.c1.esc",
+                "ecocCollection": "enxcol_.c1.ecoc",
+                "fields": []
+            },
             "db.c2": {
                 "escCollection": "enxcol_.c2.esc",
                 "ecocCollection": "enxcol_.c2.ecoc",
@@ -42,7 +46,9 @@
                         "bsonType": "string",
                         "queries": {
                             "queryType": "equality",
-                            "contention": 0
+                            "contention": {
+                                "$numberInt": "0"
+                            }
                         }
                     }
                 ]

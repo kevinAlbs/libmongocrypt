@@ -48,6 +48,11 @@
                             }
                         }
                     ]
+                },
+                "db.c2": {
+                    "escCollection": "enxcol_.c2.esc",
+                    "ecocCollection": "enxcol_.c2.ecoc",
+                    "fields": []
                 }
             }
         }
