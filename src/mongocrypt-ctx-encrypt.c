@@ -2523,6 +2523,9 @@ bool mongocrypt_ctx_encrypt_init(mongocrypt_ctx_t *ctx, const char *db, int32_t 
 
 #define WIRE_VERSION_SERVER_6 17
 #define WIRE_VERSION_SERVER_8_1 26
+// The crypt_shared version format is defined in mongo_crypt-v1.h.
+// Example: server 6.2.1 is encoded as 0x0006000200010000
+#define CRYPT_SHARED_8_1 0x0008000100000000ull
 
 /* mongocrypt_ctx_encrypt_ismaster_done is called when:
  * 1. The max wire version of mongocryptd is known.
@@ -2535,8 +2538,6 @@ static bool mongocrypt_ctx_encrypt_ismaster_done(mongocrypt_ctx_t *ctx) {
 
     ectx->ismaster.needed = false;
 
-    /* The "create" and "createIndexes" command require bypassing on mongocryptd
-     * older than version 6.0. */
     if (needs_ismaster_check(ctx)) {
         // MONGOCRYPT-429: "create" and "createIndexes" require bypassing on mongocryptd older than version 6.0.
         if (0 == strcmp(ectx->cmd_name, "create") || 0 == strcmp(ectx->cmd_name, "createIndexes")) {
@@ -2549,8 +2550,8 @@ static bool mongocrypt_ctx_encrypt_ismaster_done(mongocrypt_ctx_t *ctx) {
         }
 
         if (mc_schema_broker_has_multiple_requests(ectx->sb)) {
+            // Ensure mongocryptd supports multiple schemas.
             if (ectx->ismaster.maxwireversion < WIRE_VERSION_SERVER_8_1) {
-                // Ensure mongocryptd supports multiple schemas.
                 mongocrypt_status_t *status = ctx->status;
                 CLIENT_ERR("Encrypting '%s' requires multiple schemas. Detected mongocryptd with wire version %" PRId32
                            ", but need %" PRId32 ". Upgrade mongocryptd to 8.1 or newer.",
@@ -2563,6 +2564,20 @@ static bool mongocrypt_ctx_encrypt_ismaster_done(mongocrypt_ctx_t *ctx) {
         }
     }
 
+    if (ctx->crypt->csfle.okay) {
+        if (mc_schema_broker_has_multiple_requests(ectx->sb)) {
+            // Ensure crypt_shared supports multiple schemas.
+            uint64_t version = ctx->crypt->csfle.get_version();
+            const char *version_str = ctx->crypt->csfle.get_version_str();
+            if (version < CRYPT_SHARED_8_1) {
+                mongocrypt_status_t *status = ctx->status;
+                CLIENT_ERR("Encrypting '%s' requires multiple schemas. Detected crypt_shared with wire version %s, but "
+                           "need 8.1. Upgrade crypt_shared to 8.1 or newer.",
+                           ectx->cmd_name,
+                           version_str);
+                _mongocrypt_ctx_fail(ctx);
+                return false;
+            }
         }
     }
 
