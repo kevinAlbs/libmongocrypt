@@ -1,0 +1,12 @@
+{
+    "ismaster": true,
+    "iscryptd": true,
+    "maxBsonObjectSize": 16777216,
+    "maxMessageSizeBytes": 48000000,
+    "localTime": {
+        "$date": "2025-02-13T02:11:40.426Z"
+    },
+    "maxWireVersion": 26,
+    "minWireVersion": 0,
+    "ok": 1
+}
