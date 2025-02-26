@@ -5211,6 +5211,7 @@ static void _test_lookup(_mongocrypt_tester_t *tester) {
         mongocrypt_t *crypt = _mongocrypt_tester_mongocrypt(TESTER_MONGOCRYPT_DEFAULT);
         mongocrypt_ctx_t *ctx = mongocrypt_ctx_new(crypt);
 
+        ASSERT_OK(mongocrypt_ctx_setopt_maxwireversion(ctx, WIRE_VERSION_SERVER_8_1), ctx);
         ASSERT_OK(mongocrypt_ctx_encrypt_init(ctx, "db", -1, TF("cmd.json")), ctx);
         expect_and_reply_to_ismaster(ctx);
         ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_COLLINFO);
@@ -5245,12 +5246,36 @@ static void _test_lookup(_mongocrypt_tester_t *tester) {
     }
 #undef TF
 
+// Test $lookup with QE errors if server is too old.
+#define TF(suffix) TEST_FILE("./test/data/lookup/qe/" suffix)
+    {
+        mongocrypt_t *crypt = _mongocrypt_tester_mongocrypt(TESTER_MONGOCRYPT_DEFAULT);
+        mongocrypt_ctx_t *ctx = mongocrypt_ctx_new(crypt);
+
+        ASSERT_OK(mongocrypt_ctx_setopt_maxwireversion(ctx, WIRE_VERSION_SERVER_8_0), ctx);
+        ASSERT_OK(mongocrypt_ctx_encrypt_init(ctx, "db", -1, TF("cmd.json")), ctx);
+        expect_and_reply_to_ismaster(ctx);
+        ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_COLLINFO);
+        {
+            expect_mongo_op(ctx, TEST_BSON(BSON_STR({"name" : {"$in" : [ "c1", "c2" ]}})));
+            // Feed both needed schemas.
+            ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, TF("collInfo-c1.json")), ctx);
+            ASSERT_OK(mongocrypt_ctx_mongo_feed(ctx, TF("collInfo-c2.json")), ctx);
+            ASSERT_FAILS(mongocrypt_ctx_mongo_done(ctx), ctx, "Upgrade server");
+        }
+
+        mongocrypt_ctx_destroy(ctx);
+        mongocrypt_destroy(crypt);
+    }
+#undef TF
+
 // Test $lookup with QE with an encrypted payload.
 #define TF(suffix) TEST_FILE("./test/data/lookup/qe-with-payload/" suffix)
     {
         mongocrypt_t *crypt = _mongocrypt_tester_mongocrypt(TESTER_MONGOCRYPT_DEFAULT);
         mongocrypt_ctx_t *ctx = mongocrypt_ctx_new(crypt);
 
+        ASSERT_OK(mongocrypt_ctx_setopt_maxwireversion(ctx, WIRE_VERSION_SERVER_8_1), ctx);
         ASSERT_OK(mongocrypt_ctx_encrypt_init(ctx, "db", -1, TF("cmd.json")), ctx);
         expect_and_reply_to_ismaster(ctx);
         ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_COLLINFO);
@@ -5300,6 +5325,7 @@ static void _test_lookup(_mongocrypt_tester_t *tester) {
         ASSERT_OK(mongocrypt_init(crypt), crypt);
         mongocrypt_ctx_t *ctx = mongocrypt_ctx_new(crypt);
 
+        ASSERT_OK(mongocrypt_ctx_setopt_maxwireversion(ctx, WIRE_VERSION_SERVER_8_1), ctx);
         ASSERT_OK(mongocrypt_ctx_encrypt_init(ctx, "db", -1, TF("cmd.json")), ctx);
         expect_and_reply_to_ismaster(ctx);
         ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_COLLINFO);
@@ -5345,6 +5371,7 @@ static void _test_lookup(_mongocrypt_tester_t *tester) {
         mongocrypt_t *crypt = _mongocrypt_tester_mongocrypt(TESTER_MONGOCRYPT_DEFAULT);
         mongocrypt_ctx_t *ctx = mongocrypt_ctx_new(crypt);
 
+        ASSERT_OK(mongocrypt_ctx_setopt_maxwireversion(ctx, WIRE_VERSION_SERVER_8_1), ctx);
         ASSERT_OK(mongocrypt_ctx_encrypt_init(ctx, "db", -1, TF("cmd.json")), ctx);
         ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_COLLINFO);
         {
@@ -5390,6 +5417,7 @@ static void _test_lookup(_mongocrypt_tester_t *tester) {
 #define TF(suffix) TEST_FILE("./test/data/lookup/qe-self/" suffix)
         {
             mongocrypt_ctx_t *ctx = mongocrypt_ctx_new(crypt);
+            ASSERT_OK(mongocrypt_ctx_setopt_maxwireversion(ctx, WIRE_VERSION_SERVER_8_1), ctx);
             ASSERT_OK(mongocrypt_ctx_encrypt_init(ctx, "db", -1, TF("cmd.json")), ctx);
             ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_COLLINFO);
             {
@@ -5406,6 +5434,7 @@ static void _test_lookup(_mongocrypt_tester_t *tester) {
         {
             mongocrypt_ctx_t *ctx = mongocrypt_ctx_new(crypt);
 
+            ASSERT_OK(mongocrypt_ctx_setopt_maxwireversion(ctx, WIRE_VERSION_SERVER_8_1), ctx);
             ASSERT_OK(mongocrypt_ctx_encrypt_init(ctx, "db", -1, TF("cmd.json")), ctx);
             expect_and_reply_to_ismaster(ctx);
             ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_COLLINFO);
@@ -5432,6 +5461,7 @@ static void _test_lookup(_mongocrypt_tester_t *tester) {
         mongocrypt_t *crypt = _mongocrypt_tester_mongocrypt(TESTER_MONGOCRYPT_DEFAULT);
         mongocrypt_ctx_t *ctx = mongocrypt_ctx_new(crypt);
 
+        ASSERT_OK(mongocrypt_ctx_setopt_maxwireversion(ctx, WIRE_VERSION_SERVER_8_1), ctx);
         ASSERT_OK(mongocrypt_ctx_encrypt_init(ctx, "db", -1, TF("cmd.json")), ctx);
         expect_and_reply_to_ismaster(ctx);
         ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_COLLINFO);
@@ -5462,6 +5492,7 @@ static void _test_lookup(_mongocrypt_tester_t *tester) {
         mongocrypt_t *crypt = _mongocrypt_tester_mongocrypt(TESTER_MONGOCRYPT_DEFAULT);
         mongocrypt_ctx_t *ctx = mongocrypt_ctx_new(crypt);
 
+        ASSERT_OK(mongocrypt_ctx_setopt_maxwireversion(ctx, WIRE_VERSION_SERVER_8_1), ctx);
         ASSERT_OK(mongocrypt_ctx_encrypt_init(ctx, "db", -1, TF("cmd.json")), ctx);
         expect_and_reply_to_ismaster(ctx);
         ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_COLLINFO);
@@ -5508,6 +5539,7 @@ static void _test_lookup(_mongocrypt_tester_t *tester) {
         mongocrypt_t *crypt = _mongocrypt_tester_mongocrypt(TESTER_MONGOCRYPT_DEFAULT);
         mongocrypt_ctx_t *ctx = mongocrypt_ctx_new(crypt);
 
+        ASSERT_OK(mongocrypt_ctx_setopt_maxwireversion(ctx, WIRE_VERSION_SERVER_8_1), ctx);
         ASSERT_OK(mongocrypt_ctx_encrypt_init(ctx, "db", -1, TF("cmd.json")), ctx);
         expect_and_reply_to_ismaster(ctx);
         ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_COLLINFO);
@@ -5599,6 +5631,7 @@ static void _test_lookup(_mongocrypt_tester_t *tester) {
         mongocrypt_t *crypt = _mongocrypt_tester_mongocrypt(TESTER_MONGOCRYPT_DEFAULT);
         mongocrypt_ctx_t *ctx = mongocrypt_ctx_new(crypt);
 
+        ASSERT_OK(mongocrypt_ctx_setopt_maxwireversion(ctx, WIRE_VERSION_SERVER_8_1), ctx);
         ASSERT_OK(mongocrypt_ctx_encrypt_init(ctx, "db", -1, TF("cmd.json")), ctx);
         expect_and_reply_to_ismaster(ctx);
         ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_COLLINFO);
@@ -5753,6 +5786,7 @@ static void _test_lookup(_mongocrypt_tester_t *tester) {
         mongocrypt_t *crypt = _mongocrypt_tester_mongocrypt(TESTER_MONGOCRYPT_DEFAULT);
         mongocrypt_ctx_t *ctx = mongocrypt_ctx_new(crypt);
 
+        ASSERT_OK(mongocrypt_ctx_setopt_maxwireversion(ctx, WIRE_VERSION_SERVER_8_1), ctx);
         ASSERT_OK(mongocrypt_ctx_encrypt_init(ctx, "db", -1, TF("cmd.json")), ctx);
         expect_and_reply_to_ismaster(ctx);
         ASSERT_STATE_EQUAL(mongocrypt_ctx_state(ctx), MONGOCRYPT_CTX_NEED_MONGO_COLLINFO);

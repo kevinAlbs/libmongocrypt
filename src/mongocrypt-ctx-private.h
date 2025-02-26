@@ -87,6 +87,11 @@ typedef struct __mongocrypt_ctx_opts_t {
         mc_RangeOpts_t value;
         bool set;
     } rangeopts;
+
+    struct {
+        int32_t value; // maxWireVersion of target server.
+        bool set;
+    } maxwireversion;
 } _mongocrypt_ctx_opts_t;
 
 // `_mongocrypt_ctx_opts_t` inherits extended alignment from libbson. To dynamically allocate, use
@@ -193,6 +198,8 @@ typedef struct {
 
     // cmd_name is the first BSON field in original_cmd for auto encryption.
     const char *cmd_name;
+    // `has_lookup` is true if the command is an `aggregate` with `$lookup` stage.
+    bool has_lookup;
 } _mongocrypt_ctx_encrypt_t;
 
 // `_mongocrypt_ctx_encrypt_t` inherits extended alignment from libbson. To dynamically allocate, use
@@ -306,5 +313,12 @@ bool _mongocrypt_ctx_state_from_key_broker(mongocrypt_ctx_t *ctx) MONGOCRYPT_WAR
 /* Get the KMS providers for the current context, fall back to the ones
  * from mongocrypt_t if none are provided for the context specifically. */
 _mongocrypt_opts_kms_providers_t *_mongocrypt_ctx_kms_providers(mongocrypt_ctx_t *ctx);
+
+#define WIRE_VERSION_SERVER_6 17
+#define WIRE_VERSION_SERVER_8_0 25
+#define WIRE_VERSION_SERVER_8_1 26
+// The crypt_shared version format is defined in mongo_crypt-v1.h.
+// Example: server 6.2.1 is encoded as 0x0006000200010000
+#define CRYPT_SHARED_8_1 0x0008000100000000ull
 
 #endif /* MONGOCRYPT_CTX_PRIVATE_H */

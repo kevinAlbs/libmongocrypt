@@ -480,6 +480,24 @@ static bool _try_run_csfle_marking(mongocrypt_ctx_t *ctx) {
 
     _mongocrypt_ctx_encrypt_t *ectx = (_mongocrypt_ctx_encrypt_t *)ctx;
 
+    if (ectx->has_lookup && mc_schema_broker_has_any_qe_schemas(ectx->sb)) {
+        // Require server version 8.1+ to avoid the risk of pre-8.1 servers quietly ignoring QE payloads in $lookup
+        // sub-pipelines.
+        mongocrypt_status_t *status = ctx->status;
+        if (!ctx->opts.maxwireversion.set) {
+            CLIENT_ERR("maxWireVersion is required to process $lookup with Queryable Encryption. Call "
+                       "mongocrypt_ctx_setopt_maxwireversion");
+            return _mongocrypt_ctx_fail(ctx);
+        }
+        if (ctx->opts.maxwireversion.value < WIRE_VERSION_SERVER_8_1) {
+            CLIENT_ERR("Server reports maxWireVersion %d, but need %" PRId32
+                       ". Server 8.1 is required to support $lookup for Queryable Encryption. Upgrade server.",
+                       ctx->opts.maxwireversion.value,
+                       WIRE_VERSION_SERVER_8_1);
+            return _mongocrypt_ctx_fail(ctx);
+        }
+    }
+
     BSON_ASSERT(ctx->crypt);
 
     // We have a valid schema and just need to mark the fields for encryption
@@ -2242,6 +2260,7 @@ static bool find_collections_in_pipeline(mc_schema_broker_t *sb,
                                          bson_iter_t pipeline_iter,
                                          const char *db,
                                          mstr_view path,
+                                         bool *has_lookup,
                                          mongocrypt_status_t *status) {
     bson_iter_t array_iter;
     if (!BSON_ITER_HOLDS_ARRAY(&pipeline_iter) || !bson_iter_recurse(&pipeline_iter, &array_iter)) {
@@ -2268,6 +2287,8 @@ static bool find_collections_in_pipeline(mc_schema_broker_t *sb,
                 return false;
             }
 
+            *has_lookup = true;
+
             while (bson_iter_next(&lookup_iter)) {
                 const char *field = bson_iter_key(&lookup_iter);
                 if (0 == strcmp(field, "from")) {
@@ -2288,7 +2309,7 @@ static bool find_collections_in_pipeline(mc_schema_broker_t *sb,
                     mstr subpath = mstr_append(path, mstrv_lit("."));
                     mstr_inplace_append(&subpath, mstrv_view_cstr(stage_key));
                     mstr_inplace_append(&subpath, mstrv_lit(".$lookup.pipeline"));
-                    if (!find_collections_in_pipeline(sb, lookup_iter, db, subpath.view, status)) {
+                    if (!find_collections_in_pipeline(sb, lookup_iter, db, subpath.view, has_lookup, status)) {
                         mstr_free(subpath);
                         return false;
                     }
@@ -2311,7 +2332,7 @@ static bool find_collections_in_pipeline(mc_schema_broker_t *sb,
                 mstr_inplace_append(&subpath, mstrv_view_cstr(stage_key));
                 mstr_inplace_append(&subpath, mstrv_lit(".$facet."));
                 mstr_inplace_append(&subpath, mstrv_view_cstr(field));
-                if (!find_collections_in_pipeline(sb, facet_iter, db, subpath.view, status)) {
+                if (!find_collections_in_pipeline(sb, facet_iter, db, subpath.view, has_lookup, status)) {
                     mstr_free(subpath);
                     return false;
                 }
@@ -2347,7 +2368,7 @@ static bool find_collections_in_pipeline(mc_schema_broker_t *sb,
                     mstr subpath = mstr_append(path, mstrv_lit("."));
                     mstr_inplace_append(&subpath, mstrv_view_cstr(stage_key));
                     mstr_inplace_append(&subpath, mstrv_lit(".$unionWith.pipeline"));
-                    if (!find_collections_in_pipeline(sb, unionWith_iter, db, subpath.view, status)) {
+                    if (!find_collections_in_pipeline(sb, unionWith_iter, db, subpath.view, has_lookup, status)) {
                         mstr_free(subpath);
                         return false;
                     }
@@ -2360,8 +2381,11 @@ static bool find_collections_in_pipeline(mc_schema_broker_t *sb,
     return true;
 }
 
-static bool
-find_collections_in_agg(mongocrypt_binary_t *cmd, mc_schema_broker_t *sb, const char *db, mongocrypt_status_t *status) {
+static bool find_collections_in_agg(mongocrypt_binary_t *cmd,
+                                    mc_schema_broker_t *sb,
+                                    const char *db,
+                                    bool *has_lookup,
+                                    mongocrypt_status_t *status) {
     bson_t cmd_bson;
     if (!_mongocrypt_binary_to_bson(cmd, &cmd_bson)) {
         CLIENT_ERR("failed to convert command to BSON");
@@ -2374,7 +2398,7 @@ find_collections_in_agg(mongocrypt_binary_t *cmd, mc_schema_broker_t *sb, const 
         return true;
     }
 
-    return find_collections_in_pipeline(sb, iter, db, mstrv_lit("aggregate.pipeline"), status);
+    return find_collections_in_pipeline(sb, iter, db, mstrv_lit("aggregate.pipeline"), has_lookup, status);
 }
 
 bool mongocrypt_ctx_encrypt_init(mongocrypt_ctx_t *ctx, const char *db, int32_t db_len, mongocrypt_binary_t *cmd) {
@@ -2466,7 +2490,7 @@ bool mongocrypt_ctx_encrypt_init(mongocrypt_ctx_t *ctx, const char *db, int32_t 
     }
 
     if (0 == strcmp(ectx->cmd_name, "aggregate")) {
-        if (!find_collections_in_agg(cmd, ectx->sb, ectx->cmd_db, ctx->status)) {
+        if (!find_collections_in_agg(cmd, ectx->sb, ectx->cmd_db, &ectx->has_lookup, ctx->status)) {
             _mongocrypt_ctx_fail(ctx);
             return false;
         }
@@ -2518,12 +2542,6 @@ bool mongocrypt_ctx_encrypt_init(mongocrypt_ctx_t *ctx, const char *db, int32_t 
 
     return mongocrypt_ctx_encrypt_ismaster_done(ctx);
 }
-
-#define WIRE_VERSION_SERVER_6 17
-#define WIRE_VERSION_SERVER_8_1 26
-// The crypt_shared version format is defined in mongo_crypt-v1.h.
-// Example: server 6.2.1 is encoded as 0x0006000200010000
-#define CRYPT_SHARED_8_1 0x0008000100000000ull
 
 /* mongocrypt_ctx_encrypt_ismaster_done is called when:
  * 1. The max wire version of mongocryptd is known.
