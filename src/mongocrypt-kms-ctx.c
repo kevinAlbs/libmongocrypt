@@ -518,6 +518,10 @@ static void set_retry(mongocrypt_kms_ctx_t *kms) {
     kms->should_retry = true;
     kms->attempts++;
     kms->sleep_usec = backoff_time_usec(kms->attempts);
+    // Reset intermediate state of parser.
+    if (kms->parser) {
+        kms_response_parser_reset(kms->parser);
+    }
 }
 
 /* An AWS KMS context has received full response. Parse out the result or error.
@@ -1167,11 +1171,6 @@ bool mongocrypt_kms_ctx_fail(mongocrypt_kms_ctx_t *kms) {
 
     // Mark KMS context as retryable. Return again in `mongocrypt_ctx_next_kms_ctx`.
     set_retry(kms);
-
-    // Reset intermediate state of parser.
-    if (kms->parser) {
-        kms_response_parser_reset(kms->parser);
-    }
     return true;
 }
 
