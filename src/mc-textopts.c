@@ -149,6 +149,10 @@ bool mc_TextOpts_parse(mc_TextOpts_t *txo, const bson_t *in, mongocrypt_status_t
             if (!mc_TextOptsPerIndex_parse(&txo->substring, &subdoc, status)) {
                 return false;
             }
+            if (!txo->substring.strMaxLength.set) {
+                CLIENT_ERR(ERROR_PREFIX "'strMaxLength' must be set for substring");
+                return false;
+            }
         }
         END_IF_FIELD;
 
