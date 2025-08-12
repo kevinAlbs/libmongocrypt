@@ -72,6 +72,11 @@ functions:
         ignore_missing_file: true
         file: tag_expansion.yml
 
+  "assume upload role":
+    - command: ec2.assume_role
+      params:
+        role_arn: ${role_arn_libmongocrypt_upload}
+
   "tar and upload libmongocrypt libraries":
     - command: archive.targz_pack
       params:
@@ -443,6 +448,7 @@ functions:
 tasks:
 - name: build-and-test-and-upload
   commands:
+  - func: "assume upload role"
   - func: "fetch source"
   - func: "build and test"
   - func: "tar and upload libmongocrypt libraries"
