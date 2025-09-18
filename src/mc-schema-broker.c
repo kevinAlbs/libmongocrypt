@@ -56,6 +56,11 @@ mc_schema_broker_t *mc_schema_broker_new(void) {
     return bson_malloc0(sizeof(mc_schema_broker_t));
 }
 
+void mc_schema_broker_support_mixing_schemas(mc_schema_broker_t *sb) {
+    BSON_ASSERT_PARAM(sb);
+    // TODO: store a bool on `sb`?
+}
+
 bool mc_schema_broker_request(mc_schema_broker_t *sb, const char *db, const char *coll, mongocrypt_status_t *status) {
     BSON_ASSERT_PARAM(sb);
     BSON_ASSERT_PARAM(db);

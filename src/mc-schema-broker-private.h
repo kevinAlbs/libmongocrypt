@@ -34,6 +34,10 @@ mc_schema_broker_t *mc_schema_broker_new(void);
 
 void mc_schema_broker_destroy(mc_schema_broker_t *sb);
 
+// mc_schema_broker_support_mixing_schemas enables mixing CSFLE and QE schemas. Call if talking to
+// mongocryptd/crypt_shared 8.2+.
+void mc_schema_broker_support_mixing_schemas(mc_schema_broker_t *sb);
+
 // mc_schema_broker_request requests a schema for a collection. Ignores duplicates.
 // Returns error if two requests have different databases (not-yet supported).
 bool mc_schema_broker_request(mc_schema_broker_t *sb, const char *db, const char *coll, mongocrypt_status_t *status);
