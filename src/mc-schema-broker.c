@@ -944,6 +944,15 @@ static bool insert_csfleEncryptionSchemas(const mc_schema_broker_t *sb,
         return true;
     }
 
+    bool skip_empty = false;
+    for (mc_schema_entry_t *se = sb->ll; se != NULL; se = se->next) {
+        if (se->encryptedFields.set) {
+            // If any entry has encryptedFields, do not add empty JSON schema.
+            // Prefer an empty encryptedFields.
+            skip_empty = true;
+        }
+    }
+
     if (sb->ll_len == 1) {
         // Append the only jsonSchema with the "jsonSchema" field.
         const mc_schema_entry_t *se = sb->ll;
@@ -957,7 +966,7 @@ static bool insert_csfleEncryptionSchemas(const mc_schema_broker_t *sb,
             TRY_BSON_OR(BSON_APPEND_BOOL(cmd, "isRemoteSchema", se->jsonSchema.is_remote)) {
                 return false;
             }
-        } else {
+        } else if (!skip_empty) {
             bson_t empty = BSON_INITIALIZER;
             TRY_BSON_OR(BSON_APPEND_DOCUMENT(cmd, "jsonSchema", &empty)) {
                 return false;
@@ -978,6 +987,10 @@ static bool insert_csfleEncryptionSchemas(const mc_schema_broker_t *sb,
 
     for (mc_schema_entry_t *se = sb->ll; se != NULL; se = se->next) {
         if (se->encryptedFields.set) {
+            continue;
+        }
+
+        if (!se->jsonSchema.set && skip_empty) {
             continue;
         }
 
