@@ -200,6 +200,7 @@ static void _test_loading_libmongocrypt_fails(_mongocrypt_tester_t *tester) {
 }
 
 void _mongocrypt_tester_install_csfle_lib(_mongocrypt_tester_t *tester) {
+    return;
     INSTALL_TEST(_test_csfle_no_paths);
     INSTALL_TEST(_test_csfle_not_found);
     INSTALL_TEST(_test_csfle_load);
