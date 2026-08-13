@@ -34,17 +34,9 @@ The optional install step:
 cmake --install cmake-build
 ```
 
-> [!IMPORTANT]
-> For multi-configuration generators (e.g. "Visual Studio *", "Ninja Multi-Config", etc.), use `--config <config>` during the build, install, and test steps instead of `CMAKE_BUILD_TYPE=<config>`.
-> The `CMAKE_BUILD_TYPE` option will be ignored by the configuration step.
-> Only use `CMAKE_BUILD_TYPE` with single-configuration generators (e.g. Makefile Generators, Ninja, etc.).
+Key CMake configuration options for this project (given `option=(default|alternatives...)`):
 
-Key CMake configuration options (given `option=(default|alternatives...)`):
-
-- `-G <generator-name>`: specify a build system generator (e.g. `Ninja`).
-- `-D CMAKE_PREFIX_PATH:PATH=<prefix>`: installation prefixes to search with `find_*()` (e.g. an installed libbson with `USE_SHARED_LIBBSON=ON`, or OpenSSL).
 - `-D CMAKE_INSTALL_PREFIX:PATH=<install-prefix>`: install directory used by `install()`. Use `cmake-build/install/` when system modification is undesirable or disallowed by the user.
-- `-D CMAKE_BUILD_TYPE:STRING=<config>`: build type on single-configuration generators.
 - `-D MONGOCRYPT_CRYPTO:STRING=(OpenSSL|CommonCrypto|CNG|none)`: crypto backend. Defaults to the platform native (OpenSSL on Linux, CommonCrypto on macOS, CNG on Windows).
 - `-D DISABLE_NATIVE_CRYPTO:BOOL=(OFF|ON)`: shortcut for `MONGOCRYPT_CRYPTO=none` — build with no crypto backend; a driver then supplies crypto at runtime via `mongocrypt_setopt_crypto_hooks`.
 - `-D OPENSSL_ROOT_DIR:PATH=<dir>`: OpenSSL location, if not on a default path.
@@ -52,8 +44,6 @@ Key CMake configuration options (given `option=(default|alternatives...)`):
 - `-D ENABLE_STATIC:BOOL=(ON|OFF)`: build and install static libraries.
 - `-D BUILD_TESTING:BOOL=(ON|OFF)`: required to enable test targets including `test-mongocrypt` (see [Running Tests](#running-tests)).
 - `-D ENABLE_ONLINE_TESTS:BOOL=(ON|OFF)`: required to enable test targets requiring external servers and the `csfle` utility (requires libmongoc).
-
-**Build performance:** Ninja parallelizes builds across all available cores by default; to cap the job count, set `CMAKE_BUILD_PARALLEL_LEVEL=<N>` in the environment before running `cmake --build`.
 
 > [!NOTE]
 > `.evergreen/build_all.sh` is the authoritative reference for CI configure-build-install routines. Consult for platform-specific options and flags.
@@ -86,9 +76,6 @@ Test targets build by default (`BUILD_TESTING=ON`). The suite is a single execut
 ./cmake-build/test-mongocrypt                              # whole suite
 ./cmake-build/test-mongocrypt _test_setopt_kms_providers   # a single test, by function name
 ```
-
-> [!IMPORTANT]
-> For multi-configuration generators, the executable appears under a `<config>/` subdirectory (e.g. `cmake-build/Debug/test-mongocrypt`).
 
 A few tests need a real crypt_shared library; download one with the `mongodl.py` script from drivers-evergreen-tools: <https://github.com/mongodb-labs/drivers-evergreen-tools/blob/master/.evergreen/mongodl.py>
 
