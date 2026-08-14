@@ -609,6 +609,12 @@ if (ENABLE_FUZZING)
    target_link_libraries (fuzz_mongocrypt PRIVATE mongocrypt_static _mongocrypt::libbson_for_static)
    target_compile_options (fuzz_mongocrypt PRIVATE -fsanitize=fuzzer)
    target_link_options (fuzz_mongocrypt PRIVATE -fsanitize=fuzzer)
+
+   add_executable (fuzz_kms EXCLUDE_FROM_ALL test/fuzz_kms.c)
+   target_include_directories (fuzz_kms PRIVATE ./src ./kms-message ./kms-message/src)
+   target_link_libraries (fuzz_kms PRIVATE mongocrypt_static kms_message_static _mongocrypt::libbson_for_static)
+   target_compile_options (fuzz_kms PRIVATE -fsanitize=fuzzer)
+   target_link_options (fuzz_kms PRIVATE -fsanitize=fuzzer)
 endif ()
 
 if (ENABLE_STATIC)
