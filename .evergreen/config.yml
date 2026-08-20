@@ -607,7 +607,7 @@ tasks:
     - func: "test python integ"
       vars: { variant_name: "${build_variant}" }
 
-- name: "release-python-macos-1100"
+- name: "release-python-macos-14-arm64"
   tags: ["release_python_tag"]
   # Run task on macOS 14 since macOS 11 is EOL and fails to run release script.
   # The macOS platform is set by MACOSX_DEPLOYMENT_TARGET/_PYTHON_HOST_PLATFORM in scripts/release.sh, so the produced artifacts do not depend on the host macOS version.
